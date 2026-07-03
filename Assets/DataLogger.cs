@@ -1,141 +1,243 @@
+using System;
+using System.Globalization;
 using System.IO;
 using UnityEngine;
 
+/// <summary>
+/// 시계열 데이터 로거 (병합본).
+/// - 데이터 컬럼·측정·CSV 형식: origin/main 스키마 그대로 (메타/노면조건/4륜 하중/LTR/바퀴들림 등 전부 유지)
+/// - 오케스트레이션: DynamicSceneController가 BeginBatch→(BeginRun→EndRun)*→EndBatch로 구동
+///   · 케이스별 파일(persistentDataPath, 화물 태그 파일명) + 배치 통합 파일(Assets/Data/Results) 둘 다 출력
+///   · recording 게이트로 주행 구간만 기록(안정화·리셋 구간 제외)
+///   · 화물 컬럼(CargoCount/TotalMassKg/SecuredFrac) 추가
+/// - FixedUpdate 기반 샘플링 → 배속(timeScale) 무관하게 interval(0.1s) 간격 보장
+/// </summary>
 [RequireComponent(typeof(Rigidbody))]
 public class DataLogger : MonoBehaviour
 {
     [Header("Logging")]
     public float interval = 0.1f;
-    public string fileName = "vehicle_dynamics_data.csv";
+    public string fileName = "vehicle_dynamics_v3.csv";
     public bool logToConsole = false;
+    public int flushEveryRows = 50;
+
+    [Header("IDs")]
+    public string datasetVersion = "V1.0";
+    public string layoutID = "LAYOUT_001";   // BeginRun에서 케이스명으로 덮어씀
+    public string runID = "";                // BeginBatch에서 배치 id로 덮어씀
+    public string scenarioID = "ISO_DLC";
+
+    [Header("Run Conditions")]
+    public float targetSpeedKmh = 45f;
+    public string frictionCondition = "DRY";
+    public string roadCondition = "FLAT";
+    public float roadBankAngleDeg = 0f;
+    public float roadSlopeDeg = 0f;
+    public float vehicleBaseMassKg = 3500f;
 
     [Header("References")]
     public VehicleController vehicle;
-    [Tooltip("파일명에 붙일 화물 정보 소스 (비우면 자동 검색, 없어도 동작)")]
+    [Tooltip("화물 정보 소스 (비우면 자동 검색). 파일명 태그 + 화물 컬럼에 사용")]
     public CargoBedLoader cargoLoader;
 
-    private Rigidbody rb;
-    private StreamWriter writer;         // 케이스별 시계열 파일 (기존 유지)
-    private StreamWriter combinedWriter; // 배치 전체 시계열 통합 파일 (신규)
+    [Header("Wheel Lift")]
+    public float wheelLiftForceThreshold = 50f;
+    public float wheelLiftDurationThreshold = 0.1f;
 
-    private float timer;
-    private bool recording;              // BeginRun~EndRun 사이에만 true (케이스 주행 구간)
+    private Rigidbody rb;
+    private StreamWriter writer;         // 케이스별 파일
+    private StreamWriter combinedWriter; // 배치 통합 파일
+    private bool recording;              // BeginRun~EndRun 사이에만 true
+
+    private float logTimer;
+    private float runStartTime;
+    private float lastLogTime;
+
     private Vector3 lastVelocity;
     private Vector3 lastEuler;
     private Vector3 lastAngularVelocity;
 
-    // 통합 파일용: 현재 케이스 메타 + 배치 식별자
-    private string batchId = "";
-    private string curCaseName = "";
+    private int sampleIndex;
+    private int rowsSinceFlush;
+
+    private float leftLiftTimer;
+    private float rightLiftTimer;
+    private bool leftWheelLift;
+    private bool rightWheelLift;
+
+    // 화물 메타 (BeginRun에서 세팅) — origin/main 스키마에 추가되는 컬럼
     private int curCargoCount;
     private float curTotalMassKg;
     private float curSecuredFrac;
 
-    // 케이스별·통합 파일이 공유하는 시계열 컬럼 헤더
-    private const string COLUMNS =
-        "Time,PosX,PosY,PosZ,VelX,VelY,VelZ,SpeedKmh,AccX,AccY,AccZ," +
-        "LongAcc,LatAcc,VertAcc,Roll,Pitch,Yaw,RollRate,PitchRate,YawRate," +
+    private static readonly CultureInfo CsvCulture = CultureInfo.InvariantCulture;
+
+    // 케이스별·통합 파일 공통 헤더. origin/main 컬럼 전부 유지 + Cargo* 3개 추가(조건 블록 뒤).
+    private const string HEADER =
+        "DatasetVersion,LayoutID,RunID,ScenarioID,SampleIndex,RunTime,UnityTime," +
+        "TargetSpeedKmh,FrictionCondition,RoadCondition,RoadBankAngleDeg,RoadSlopeDeg,VehicleBaseMassKg," +
+        "CargoCount,TotalMassKg,SecuredFrac," +
+        "PosX,PosY,PosZ,VelX,VelY,VelZ,SpeedKmh," +
+        "AccX,AccY,AccZ,LongAcc,LatAcc,VertAcc," +
+        "Roll,Pitch,Yaw,RollRate,PitchRate,YawRate," +
         "AngVelX,AngVelY,AngVelZ,AngAccX,AngAccY,AngAccZ," +
         "SteerAngle,TargetSteer,Throttle,Brake," +
         "FL_Grounded,FR_Grounded,RL_Grounded,RR_Grounded," +
+        "FL_NormalForce,FR_NormalForce,RL_NormalForce,RR_NormalForce," +
+        "LeftNormalForce,RightNormalForce,FrontNormalForce,RearNormalForce," +
+        "LTR_Total,LTR_Front,LTR_Rear," +
+        "LeftWheelLift,RightWheelLift,AnyWheelLift," +
         "FL_ForwardSlip,FR_ForwardSlip,RL_ForwardSlip,RR_ForwardSlip," +
         "FL_SideSlip,FR_SideSlip,RL_SideSlip,RR_SideSlip," +
-        "MaxForwardSlip,MaxSideSlip,RolloverRisk,IsRollover";
+        "MaxForwardSlip,MaxSideSlip,LegacyRolloverRisk,IsRollover";
 
     void Start()
     {
         rb = GetComponent<Rigidbody>();
-
-        if (vehicle == null)
-            vehicle = GetComponent<VehicleController>();
-
-        lastVelocity = rb.velocity;
-        lastEuler = transform.eulerAngles;
-        lastAngularVelocity = rb.angularVelocity;
-
-        if (cargoLoader == null)
-            cargoLoader = FindObjectOfType<CargoBedLoader>();
-        // 파일 생성은 첫 샘플 시점으로 미룸 — 화물 적재(첫 프레임 이후)가 끝난 뒤
-        // 파일명에 배치 정보를 넣기 위해서. 타임스탬프 덕에 run마다 새 파일(덮어쓰기 없음).
+        if (vehicle == null) vehicle = GetComponent<VehicleController>();
+        if (cargoLoader == null) cargoLoader = FindObjectOfType<CargoBedLoader>();
+        if (string.IsNullOrWhiteSpace(runID))
+            runID = "RUN_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CsvCulture);
+        // 파일 열기는 BeginBatch/BeginRun에서 (recording 게이트 방식) — Start에선 초기화만.
     }
 
-    private void EnsureWriter()
+    // ── 배치 통합 파일 (전체 케이스 한 파일) ─────────────────────────────────
+    /// <summary>배치 시작: Assets/Data/Results/combined_timeseries_&lt;runId&gt;.csv 열기. runId는 RunID 컬럼에도 반영.</summary>
+    public void BeginBatch(string runId)
     {
-        if (writer != null) return;
+        if (!string.IsNullOrEmpty(runId)) runID = runId;
+        CargoPaths.EnsureAll();
+        string path = Path.Combine(CargoPaths.ResultsDir, $"combined_timeseries_{runID}.csv");
+        try
+        {
+            combinedWriter = new StreamWriter(path, false);
+            combinedWriter.WriteLine(HEADER);
+            Debug.Log("통합 시계열 CSV 저장 시작: " + path);
+        }
+        catch (Exception e)
+        {
+            combinedWriter = null;
+            Debug.LogError($"통합 시계열 파일 열기 실패: {path}\n{e.Message}");
+        }
+    }
 
+    public void EndBatch()
+    {
+        if (combinedWriter != null)
+        {
+            combinedWriter.Flush();
+            combinedWriter.Close();
+            combinedWriter = null;
+        }
+    }
+
+    // ── 케이스별 파일 + 기록 시작/종료 ───────────────────────────────────────
+    /// <summary>케이스 주행 시작: LayoutID=케이스명, 화물 메타 세팅, 케이스별 파일 열고 샘플링 시작.</summary>
+    public void BeginRun(string caseName, int cargoCount, float totalMassKg, float securedFrac)
+    {
+        if (!string.IsNullOrEmpty(caseName)) layoutID = caseName;
+        curCargoCount = cargoCount;
+        curTotalMassKg = totalMassKg;
+        curSecuredFrac = securedFrac;
+
+        // 케이스별 상태 리셋 (각 케이스가 SampleIndex 0 · RunTime 0에서 시작)
+        sampleIndex = 0;
+        rowsSinceFlush = 0;
+        logTimer = 0f;
+        leftLiftTimer = rightLiftTimer = 0f;
+        leftWheelLift = rightWheelLift = false;
+        runStartTime = Time.time;
+        lastLogTime = Time.time;
+        if (rb != null) { lastVelocity = rb.velocity; lastAngularVelocity = rb.angularVelocity; }
+        lastEuler = transform.eulerAngles;
+
+        OpenCaseWriter();
+        recording = true;
+    }
+
+    /// <summary>케이스 주행 종료: 케이스 파일 닫고 샘플링 정지 (통합 파일은 유지).</summary>
+    public void EndRun()
+    {
+        recording = false;
+        CloseCaseWriter();
+    }
+
+    /// <summary>하위호환: 케이스 파일만 닫기.</summary>
+    public void StartNewFile() => CloseCaseWriter();
+
+    private void OpenCaseWriter()
+    {
+        CloseCaseWriter();
         string baseName = Path.GetFileNameWithoutExtension(fileName);
-        string stamp = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CsvCulture);
 
         string cargoTag = "";
         if (cargoLoader != null && cargoLoader.Loaded.Count > 0)
         {
             string layout = string.IsNullOrEmpty(cargoLoader.LastLoadedPath)
-                ? "layout"
-                : Path.GetFileNameWithoutExtension(cargoLoader.LastLoadedPath);
+                ? "layout" : Path.GetFileNameWithoutExtension(cargoLoader.LastLoadedPath);
             float mass = 0f;
-            foreach (var c in cargoLoader.Loaded)
-                mass += c.type.massKg * cargoLoader.massScale;
+            foreach (var c in cargoLoader.Loaded) mass += c.type.massKg * cargoLoader.massScale;
             cargoTag = $"_{layout}_n{cargoLoader.Loaded.Count}_{mass:F0}kg";
         }
 
         string path = Path.Combine(Application.persistentDataPath, $"{baseName}_{stamp}{cargoTag}.csv");
-
         try
         {
             writer = new StreamWriter(path, false);
-            writer.WriteLine(COLUMNS);
+            writer.WriteLine(HEADER);
             Debug.Log("케이스 시계열 CSV 저장 시작: " + path);
         }
-        catch (System.Exception e)
+        catch (Exception e)
         {
             writer = null;
             Debug.LogError($"케이스 시계열 파일 열기 실패: {path}\n{e.Message}");
         }
     }
 
-    // 물리 스텝 기반 기록 — Update(프레임)로 하면 배속(timeScale) 시 한 프레임에 시뮬시간이 크게
-    // 점프해 0.1초 간격이 깨진다. FixedUpdate는 배속과 무관하게 항상 fixedDeltaTime(0.01s)로 돌므로
-    // 여기서 interval마다 찍으면 배속 몇 배든 정확히 0.1초 간격 보장.
+    private void CloseCaseWriter()
+    {
+        if (writer != null)
+        {
+            writer.Flush();
+            writer.Close();
+            writer = null;
+        }
+    }
+
+    // ── 샘플링 (배속 무관: FixedUpdate + interval 누적) ──────────────────────
     void FixedUpdate()
     {
-        if (!recording) return;          // BeginRun 전 / EndRun 후엔 기록 안 함 (안정화·리셋 구간 제외)
+        if (!recording) return;
+        if (writer == null && combinedWriter == null) return;
 
-        // 녹화 중인데 파일이 닫혀 있으면(예외 등) 재생성 시도 — 데이터 유실·크래시 방지
-        if (writer == null) EnsureWriter();
-
-        timer += Time.fixedDeltaTime;
-        if (timer < interval)
-            return;
-
-        timer -= interval;              // 누적 오차 방지 (0으로 리셋하면 미세 드리프트)
-        LogData();                        // 파일은 BeginRun()에서 이미 열림
+        logTimer += Time.fixedDeltaTime;
+        if (logTimer < interval) return;
+        logTimer -= interval;   // 누적 오차 방지
+        LogData();
     }
 
     void LogData()
     {
+        float currentTime = Time.time;
+        float actualDeltaTime = currentTime - lastLogTime;
+        if (actualDeltaTime <= 0.0001f) actualDeltaTime = interval;
+        float runTime = currentTime - runStartTime;
+
         Vector3 pos = transform.position;
         Vector3 vel = rb.velocity;
-        Vector3 acc = (vel - lastVelocity) / interval;
-
+        Vector3 acc = (vel - lastVelocity) / actualDeltaTime;
         Vector3 localAcc = transform.InverseTransformDirection(acc);
-
-        float longAcc = localAcc.z;
-        float latAcc = localAcc.x;
-        float vertAcc = localAcc.y;
+        float longAcc = localAcc.z, latAcc = localAcc.x, vertAcc = localAcc.y;
 
         Vector3 euler = transform.eulerAngles;
-
-        float roll = NormalizeAngle(euler.z);
-        float pitch = NormalizeAngle(euler.x);
-        float yaw = NormalizeAngle(euler.y);
-
-        float rollRate = Mathf.DeltaAngle(lastEuler.z, euler.z) / interval;
-        float pitchRate = Mathf.DeltaAngle(lastEuler.x, euler.x) / interval;
-        float yawRate = Mathf.DeltaAngle(lastEuler.y, euler.y) / interval;
+        float roll = NormalizeAngle(euler.z), pitch = NormalizeAngle(euler.x), yaw = NormalizeAngle(euler.y);
+        float rollRate = Mathf.DeltaAngle(lastEuler.z, euler.z) / actualDeltaTime;
+        float pitchRate = Mathf.DeltaAngle(lastEuler.x, euler.x) / actualDeltaTime;
+        float yawRate = Mathf.DeltaAngle(lastEuler.y, euler.y) / actualDeltaTime;
 
         Vector3 angVel = rb.angularVelocity;
-        Vector3 angAcc = (angVel - lastAngularVelocity) / interval;
-
+        Vector3 angAcc = (angVel - lastAngularVelocity) / actualDeltaTime;
         float speedKmh = vel.magnitude * 3.6f;
 
         float steerAngle = vehicle != null ? vehicle.CurrentSteerAngle : 0f;
@@ -148,187 +250,144 @@ public class DataLogger : MonoBehaviour
         WheelData rl = GetWheelData(vehicle != null ? vehicle.rearLeft : null);
         WheelData rr = GetWheelData(vehicle != null ? vehicle.rearRight : null);
 
-        float maxForwardSlip = Mathf.Max(
-            Mathf.Abs(fl.forwardSlip),
-            Mathf.Abs(fr.forwardSlip),
-            Mathf.Abs(rl.forwardSlip),
-            Mathf.Abs(rr.forwardSlip)
-        );
+        float leftNormalForce = fl.normalForce + rl.normalForce;
+        float rightNormalForce = fr.normalForce + rr.normalForce;
+        float frontNormalForce = fl.normalForce + fr.normalForce;
+        float rearNormalForce = rl.normalForce + rr.normalForce;
 
-        float maxSideSlip = Mathf.Max(
-            Mathf.Abs(fl.sideSlip),
-            Mathf.Abs(fr.sideSlip),
-            Mathf.Abs(rl.sideSlip),
-            Mathf.Abs(rr.sideSlip)
-        );
+        float ltrTotal = CalculateLTR(rightNormalForce, leftNormalForce);
+        float ltrFront = CalculateLTR(fr.normalForce, fl.normalForce);
+        float ltrRear = CalculateLTR(rr.normalForce, rl.normalForce);
 
-        float rolloverRisk = CalculateRolloverRisk(roll, latAcc, rollRate, maxSideSlip);
+        UpdateWheelLift(leftNormalForce, rightNormalForce, fl, fr, rl, rr, actualDeltaTime);
+        int anyWheelLift = leftWheelLift || rightWheelLift ? 1 : 0;
+
+        float maxForwardSlip = Mathf.Max(Mathf.Abs(fl.forwardSlip), Mathf.Abs(fr.forwardSlip),
+                                         Mathf.Abs(rl.forwardSlip), Mathf.Abs(rr.forwardSlip));
+        float maxSideSlip = Mathf.Max(Mathf.Abs(fl.sideSlip), Mathf.Abs(fr.sideSlip),
+                                      Mathf.Abs(rl.sideSlip), Mathf.Abs(rr.sideSlip));
+
+        float legacyRisk = CalculateLegacyRolloverRisk(roll, latAcc, rollRate, maxSideSlip);
         int isRollover = Vector3.Dot(transform.up, Vector3.up) < 0.5f ? 1 : 0;
 
-        string line =
-            $"{Time.time:F3}," +
-            $"{pos.x:F3},{pos.y:F3},{pos.z:F3}," +
-            $"{vel.x:F3},{vel.y:F3},{vel.z:F3},{speedKmh:F3}," +
-            $"{acc.x:F3},{acc.y:F3},{acc.z:F3}," +
-            $"{longAcc:F3},{latAcc:F3},{vertAcc:F3}," +
-            $"{roll:F3},{pitch:F3},{yaw:F3}," +
-            $"{rollRate:F3},{pitchRate:F3},{yawRate:F3}," +
-            $"{angVel.x:F3},{angVel.y:F3},{angVel.z:F3}," +
-            $"{angAcc.x:F3},{angAcc.y:F3},{angAcc.z:F3}," +
-            $"{steerAngle:F3},{targetSteer:F3},{throttle:F3},{brake:F3}," +
-            $"{fl.grounded},{fr.grounded},{rl.grounded},{rr.grounded}," +
-            $"{fl.forwardSlip:F3},{fr.forwardSlip:F3},{rl.forwardSlip:F3},{rr.forwardSlip:F3}," +
-            $"{fl.sideSlip:F3},{fr.sideSlip:F3},{rl.sideSlip:F3},{rr.sideSlip:F3}," +
-            $"{maxForwardSlip:F3},{maxSideSlip:F3}," +
-            $"{rolloverRisk:F3},{isRollover}";
+        string line = string.Join(",",
+            EscapeCsv(datasetVersion), EscapeCsv(layoutID), EscapeCsv(runID), EscapeCsv(scenarioID),
+            sampleIndex.ToString(CsvCulture), F(runTime), F(currentTime),
+            F(targetSpeedKmh), EscapeCsv(frictionCondition), EscapeCsv(roadCondition),
+            F(roadBankAngleDeg), F(roadSlopeDeg), F(vehicleBaseMassKg),
+            curCargoCount.ToString(CsvCulture), F(curTotalMassKg), F(curSecuredFrac),
+            F(pos.x), F(pos.y), F(pos.z),
+            F(vel.x), F(vel.y), F(vel.z), F(speedKmh),
+            F(acc.x), F(acc.y), F(acc.z),
+            F(longAcc), F(latAcc), F(vertAcc),
+            F(roll), F(pitch), F(yaw),
+            F(rollRate), F(pitchRate), F(yawRate),
+            F(angVel.x), F(angVel.y), F(angVel.z),
+            F(angAcc.x), F(angAcc.y), F(angAcc.z),
+            F(steerAngle), F(targetSteer), F(throttle), F(brake),
+            fl.grounded.ToString(CsvCulture), fr.grounded.ToString(CsvCulture),
+            rl.grounded.ToString(CsvCulture), rr.grounded.ToString(CsvCulture),
+            F(fl.normalForce), F(fr.normalForce), F(rl.normalForce), F(rr.normalForce),
+            F(leftNormalForce), F(rightNormalForce), F(frontNormalForce), F(rearNormalForce),
+            F(ltrTotal), F(ltrFront), F(ltrRear),
+            BoolToInt(leftWheelLift), BoolToInt(rightWheelLift), anyWheelLift.ToString(CsvCulture),
+            F(fl.forwardSlip), F(fr.forwardSlip), F(rl.forwardSlip), F(rr.forwardSlip),
+            F(fl.sideSlip), F(fr.sideSlip), F(rl.sideSlip), F(rr.sideSlip),
+            F(maxForwardSlip), F(maxSideSlip),
+            F(legacyRisk), isRollover.ToString(CsvCulture));
 
-        // 케이스별 파일 (열려 있을 때만 — 파일 핸들 null이어도 크래시 금지)
-        if (writer != null)
+        if (writer != null) writer.WriteLine(line);
+        if (combinedWriter != null) combinedWriter.WriteLine(line);
+
+        sampleIndex++;
+        rowsSinceFlush++;
+        if (rowsSinceFlush >= flushEveryRows)
         {
-            writer.WriteLine(line);
-            writer.Flush();
+            if (writer != null) writer.Flush();
+            if (combinedWriter != null) combinedWriter.Flush();
+            rowsSinceFlush = 0;
         }
 
-        // 통합 파일에도 같은 행 + 케이스 식별 컬럼을 앞에 붙여 기록
-        if (combinedWriter != null)
-        {
-            combinedWriter.WriteLine(
-                $"{batchId},{curCaseName},{curCargoCount}," +
-                $"{curTotalMassKg:F1},{curSecuredFrac:F3}," + line);
-            combinedWriter.Flush();
-        }
-
-        if (logToConsole)
-            Debug.Log(line);
+        if (logToConsole) Debug.Log(line);
 
         lastVelocity = vel;
         lastEuler = euler;
         lastAngularVelocity = angVel;
+        lastLogTime = currentTime;
     }
 
     WheelData GetWheelData(WheelCollider wheel)
     {
         WheelData data = new WheelData();
+        if (wheel == null) return data;
 
-        if (wheel == null)
-            return data;
-
-        WheelHit hit;
-
-        if (wheel.GetGroundHit(out hit))
+        if (wheel.GetGroundHit(out WheelHit hit))
         {
             data.grounded = 1;
             data.forwardSlip = hit.forwardSlip;
             data.sideSlip = hit.sidewaysSlip;
+            data.normalForce = Mathf.Max(0f, hit.force);
         }
         else
         {
             data.grounded = 0;
             data.forwardSlip = 0f;
             data.sideSlip = 0f;
+            data.normalForce = 0f;
         }
-
         return data;
     }
 
-    float CalculateRolloverRisk(float roll, float latAcc, float rollRate, float sideSlip)
+    float CalculateLTR(float rightForce, float leftForce)
+    {
+        float denominator = rightForce + leftForce;
+        if (denominator <= 0.001f) return 0f;
+        return Mathf.Clamp((rightForce - leftForce) / denominator, -1f, 1f);
+    }
+
+    void UpdateWheelLift(float leftForce, float rightForce,
+        WheelData fl, WheelData fr, WheelData rl, WheelData rr, float deltaTime)
+    {
+        bool leftLiftCandidate = leftForce <= wheelLiftForceThreshold && fl.grounded == 0 && rl.grounded == 0;
+        bool rightLiftCandidate = rightForce <= wheelLiftForceThreshold && fr.grounded == 0 && rr.grounded == 0;
+
+        leftLiftTimer = leftLiftCandidate ? leftLiftTimer + deltaTime : 0f;
+        rightLiftTimer = rightLiftCandidate ? rightLiftTimer + deltaTime : 0f;
+
+        leftWheelLift = leftLiftTimer >= wheelLiftDurationThreshold;
+        rightWheelLift = rightLiftTimer >= wheelLiftDurationThreshold;
+    }
+
+    float CalculateLegacyRolloverRisk(float roll, float latAcc, float rollRate, float sideSlip)
     {
         float rollRisk = Mathf.InverseLerp(5f, 30f, Mathf.Abs(roll));
         float latRisk = Mathf.InverseLerp(3f, 8f, Mathf.Abs(latAcc));
         float rollRateRisk = Mathf.InverseLerp(5f, 30f, Mathf.Abs(rollRate));
         float slipRisk = Mathf.InverseLerp(0.2f, 1.0f, Mathf.Abs(sideSlip));
-
-        float risk =
-            rollRisk * 0.35f +
-            latRisk * 0.35f +
-            rollRateRisk * 0.20f +
-            slipRisk * 0.10f;
-
+        float risk = rollRisk * 0.35f + latRisk * 0.35f + rollRateRisk * 0.20f + slipRisk * 0.10f;
         return Mathf.Clamp01(risk);
     }
 
-    float NormalizeAngle(float angle)
-    {
-        if (angle > 180f)
-            angle -= 360f;
+    float NormalizeAngle(float angle) => angle > 180f ? angle - 360f : angle;
+    string F(float value) => value.ToString("F6", CsvCulture);
+    string BoolToInt(bool value) => value ? "1" : "0";
 
-        return angle;
+    string EscapeCsv(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        if (value.Contains(",") || value.Contains("\"") || value.Contains("\n"))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
     }
 
-    /// <summary>배치(여러 케이스 일괄) 시작: 전체 케이스가 한 파일에 쌓이는 통합 시계열 파일을 연다.
-    /// Assets/Data/Results/combined_timeseries_&lt;runId&gt;.csv. 케이스 식별 컬럼이 앞에 붙는다.</summary>
-    public void BeginBatch(string runId)
-    {
-        batchId = runId;
-        CargoPaths.EnsureAll();
-        string path = Path.Combine(CargoPaths.ResultsDir, $"combined_timeseries_{runId}.csv");
-        combinedWriter = new StreamWriter(path, false);
-        combinedWriter.WriteLine("run_id,case_name,cargo_count,total_mass_kg,secured_frac," + COLUMNS);
-        Debug.Log("통합 시계열 CSV 저장 시작: " + path);
-    }
-
-    /// <summary>배치 종료: 통합 파일을 닫는다.</summary>
-    public void EndBatch()
-    {
-        if (combinedWriter != null)
-        {
-            combinedWriter.Flush();
-            combinedWriter.Close();
-            combinedWriter = null;
-        }
-    }
-
-    /// <summary>케이스 주행 시작: 케이스별 새 파일을 열고 샘플링 시작.
-    /// 적재(Load) 후에 호출해야 파일명·메타에 화물정보가 정확히 들어감.
-    /// caseName/cargoCount/totalMass/securedFrac은 통합 파일 식별 컬럼에 쓰임.</summary>
-    public void BeginRun(string caseName, int cargoCount, float totalMassKg, float securedFrac)
-    {
-        curCaseName = caseName;
-        curCargoCount = cargoCount;
-        curTotalMassKg = totalMassKg;
-        curSecuredFrac = securedFrac;
-
-        CloseWriter();                    // 혹시 열려 있던 케이스 파일 정리
-        EnsureWriter();                   // 새 케이스 파일 생성 (화물 태그 포함)
-        // 리셋 텔레포트 여파가 첫 샘플 미분값(가속도 등)에 튀지 않게 초기화
-        if (rb != null)
-        {
-            lastVelocity = rb.velocity;
-            lastAngularVelocity = rb.angularVelocity;
-        }
-        lastEuler = transform.eulerAngles;
-        timer = 0f;
-        recording = true;
-    }
-
-    /// <summary>케이스 주행 종료: 케이스 파일을 닫고 샘플링 정지 (통합 파일은 유지).</summary>
-    public void EndRun()
-    {
-        recording = false;
-        CloseWriter();
-    }
-
-    /// <summary>배치 일괄 실행용(하위호환): 현재 케이스 파일을 닫는다.</summary>
-    public void StartNewFile() => CloseWriter();
-
-    private void CloseWriter()
-    {
-        if (writer != null)
-        {
-            writer.Flush();
-            writer.Close();
-            writer = null;
-        }
-    }
-
-    void OnApplicationQuit() { CloseWriter(); EndBatch(); }
-
-    void OnDestroy() { CloseWriter(); EndBatch(); }
+    void OnApplicationQuit() { CloseCaseWriter(); EndBatch(); }
+    void OnDestroy() { CloseCaseWriter(); EndBatch(); }
 
     struct WheelData
     {
         public int grounded;
         public float forwardSlip;
         public float sideSlip;
+        public float normalForce;
     }
 }
