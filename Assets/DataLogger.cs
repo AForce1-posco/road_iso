@@ -1,3 +1,5 @@
+using System;
+using System.Globalization;
 using System.IO;
 using UnityEngine;
 
@@ -6,19 +8,51 @@ public class DataLogger : MonoBehaviour
 {
     [Header("Logging")]
     public float interval = 0.1f;
-    public string fileName = "vehicle_dynamics_data.csv";
+    public string fileName = "vehicle_dynamics_v3.csv";
     public bool logToConsole = false;
+    public int flushEveryRows = 50;
+
+    [Header("IDs")]
+    public string datasetVersion = "V1.0";
+    public string layoutID = "LAYOUT_001";
+    public string runID = "";
+    public string scenarioID = "ISO_DLC";
+
+    [Header("Run Conditions")]
+    public float targetSpeedKmh = 45f;
+    public string frictionCondition = "DRY";
+    public string roadCondition = "FLAT";
+    public float roadBankAngleDeg = 0f;
+    public float roadSlopeDeg = 0f;
+    public float vehicleBaseMassKg = 3500f;
 
     [Header("References")]
     public VehicleController vehicle;
 
+    [Header("Wheel Lift")]
+    public float wheelLiftForceThreshold = 50f;
+    public float wheelLiftDurationThreshold = 0.1f;
+
     private Rigidbody rb;
     private StreamWriter writer;
 
-    private float timer;
+    private float logTimer;
+    private float runStartTime;
+    private float lastLogTime;
+
     private Vector3 lastVelocity;
     private Vector3 lastEuler;
     private Vector3 lastAngularVelocity;
+
+    private int sampleIndex;
+    private int rowsSinceFlush;
+
+    private float leftLiftTimer;
+    private float rightLiftTimer;
+    private bool leftWheelLift;
+    private bool rightWheelLift;
+
+    private static readonly CultureInfo CsvCulture = CultureInfo.InvariantCulture;
 
     void Start()
     {
@@ -27,51 +61,188 @@ public class DataLogger : MonoBehaviour
         if (vehicle == null)
             vehicle = GetComponent<VehicleController>();
 
+        if (string.IsNullOrWhiteSpace(runID))
+            runID = "RUN_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CsvCulture);
+
+        runStartTime = Time.time;
+        lastLogTime = Time.time;
+
         lastVelocity = rb.velocity;
         lastEuler = transform.eulerAngles;
         lastAngularVelocity = rb.angularVelocity;
 
+        sampleIndex = 0;
+        rowsSinceFlush = 0;
+
         string path = Path.Combine(Application.persistentDataPath, fileName);
 
-        writer = new StreamWriter(path, false);
+        path = EnsureCompatibleCsvPath(path);
 
-        writer.WriteLine(
-            "Time," +
-            "PosX,PosY,PosZ," +
-            "VelX,VelY,VelZ,SpeedKmh," +
-            "AccX,AccY,AccZ," +
-            "LongAcc,LatAcc,VertAcc," +
-            "Roll,Pitch,Yaw," +
-            "RollRate,PitchRate,YawRate," +
-            "AngVelX,AngVelY,AngVelZ," +
-            "AngAccX,AngAccY,AngAccZ," +
-            "SteerAngle,TargetSteer,Throttle,Brake," +
-            "FL_Grounded,FR_Grounded,RL_Grounded,RR_Grounded," +
-            "FL_ForwardSlip,FR_ForwardSlip,RL_ForwardSlip,RR_ForwardSlip," +
-            "FL_SideSlip,FR_SideSlip,RL_SideSlip,RR_SideSlip," +
-            "MaxForwardSlip,MaxSideSlip," +
-            "RolloverRisk,IsRollover"
+        bool fileHasContent = File.Exists(path) && new FileInfo(path).Length > 0;
+
+        FileStream fileStream = new FileStream(
+            path,
+            FileMode.Append,
+            FileAccess.Write,
+            FileShare.Read
         );
 
-        Debug.Log("CSV 저장 시작: " + path);
+        writer = new StreamWriter(fileStream);
+
+        if (!fileHasContent)
+            WriteHeader();
+
+        Debug.Log(
+            "CSV 누적 저장 시작\n" +
+            "Path: " + path + "\n" +
+            "LayoutID: " + layoutID + "\n" +
+            "RunID: " + runID
+        );
     }
 
-    void Update()
+    void FixedUpdate()
     {
-        timer += Time.deltaTime;
+        logTimer += Time.fixedDeltaTime;
 
-        if (timer < interval)
+        if (logTimer < interval)
             return;
 
-        timer = 0f;
+        logTimer -= interval;
         LogData();
+    }
+
+    string EnsureCompatibleCsvPath(string path)
+    {
+        string expectedFirstColumn = "DatasetVersion";
+
+        if (File.Exists(path) && new FileInfo(path).Length > 0)
+        {
+            string firstLine;
+
+            using (StreamReader reader = new StreamReader(path))
+                firstLine = reader.ReadLine();
+
+            if (string.IsNullOrEmpty(firstLine) ||
+                !firstLine.StartsWith(expectedFirstColumn + ","))
+            {
+                string directory = Path.GetDirectoryName(path);
+                string nameWithoutExtension = Path.GetFileNameWithoutExtension(path);
+                string extension = Path.GetExtension(path);
+
+                string newPath = Path.Combine(
+                    directory,
+                    nameWithoutExtension + "_" +
+                    DateTime.Now.ToString("yyyyMMdd_HHmmss", CsvCulture) +
+                    extension
+                );
+
+                Debug.LogWarning(
+                    "기존 CSV 헤더가 현재 구조와 달라 새 파일을 생성합니다.\n" +
+                    "New Path: " + newPath
+                );
+
+                return newPath;
+            }
+        }
+
+        return path;
+    }
+
+    void WriteHeader()
+    {
+        writer.WriteLine(
+            "DatasetVersion," +
+            "LayoutID," +
+            "RunID," +
+            "ScenarioID," +
+            "SampleIndex," +
+            "RunTime," +
+            "UnityTime," +
+
+            "TargetSpeedKmh," +
+            "FrictionCondition," +
+            "RoadCondition," +
+            "RoadBankAngleDeg," +
+            "RoadSlopeDeg," +
+            "VehicleBaseMassKg," +
+
+            "PosX,PosY,PosZ," +
+            "VelX,VelY,VelZ," +
+            "SpeedKmh," +
+
+            "AccX,AccY,AccZ," +
+            "LongAcc,LatAcc,VertAcc," +
+
+            "Roll,Pitch,Yaw," +
+            "RollRate,PitchRate,YawRate," +
+
+            "AngVelX,AngVelY,AngVelZ," +
+            "AngAccX,AngAccY,AngAccZ," +
+
+            "SteerAngle," +
+            "TargetSteer," +
+            "Throttle," +
+            "Brake," +
+
+            "FL_Grounded," +
+            "FR_Grounded," +
+            "RL_Grounded," +
+            "RR_Grounded," +
+
+            "FL_NormalForce," +
+            "FR_NormalForce," +
+            "RL_NormalForce," +
+            "RR_NormalForce," +
+
+            "LeftNormalForce," +
+            "RightNormalForce," +
+            "FrontNormalForce," +
+            "RearNormalForce," +
+
+            "LTR_Total," +
+            "LTR_Front," +
+            "LTR_Rear," +
+
+            "LeftWheelLift," +
+            "RightWheelLift," +
+            "AnyWheelLift," +
+
+            "FL_ForwardSlip," +
+            "FR_ForwardSlip," +
+            "RL_ForwardSlip," +
+            "RR_ForwardSlip," +
+
+            "FL_SideSlip," +
+            "FR_SideSlip," +
+            "RL_SideSlip," +
+            "RR_SideSlip," +
+
+            "MaxForwardSlip," +
+            "MaxSideSlip," +
+
+            "LegacyRolloverRisk," +
+            "IsRollover"
+        );
+
+        writer.Flush();
     }
 
     void LogData()
     {
+        if (writer == null)
+            return;
+
+        float currentTime = Time.time;
+        float actualDeltaTime = currentTime - lastLogTime;
+
+        if (actualDeltaTime <= 0.0001f)
+            actualDeltaTime = interval;
+
+        float runTime = currentTime - runStartTime;
+
         Vector3 pos = transform.position;
         Vector3 vel = rb.velocity;
-        Vector3 acc = (vel - lastVelocity) / interval;
+        Vector3 acc = (vel - lastVelocity) / actualDeltaTime;
 
         Vector3 localAcc = transform.InverseTransformDirection(acc);
 
@@ -85,12 +256,12 @@ public class DataLogger : MonoBehaviour
         float pitch = NormalizeAngle(euler.x);
         float yaw = NormalizeAngle(euler.y);
 
-        float rollRate = Mathf.DeltaAngle(lastEuler.z, euler.z) / interval;
-        float pitchRate = Mathf.DeltaAngle(lastEuler.x, euler.x) / interval;
-        float yawRate = Mathf.DeltaAngle(lastEuler.y, euler.y) / interval;
+        float rollRate = Mathf.DeltaAngle(lastEuler.z, euler.z) / actualDeltaTime;
+        float pitchRate = Mathf.DeltaAngle(lastEuler.x, euler.x) / actualDeltaTime;
+        float yawRate = Mathf.DeltaAngle(lastEuler.y, euler.y) / actualDeltaTime;
 
         Vector3 angVel = rb.angularVelocity;
-        Vector3 angAcc = (angVel - lastAngularVelocity) / interval;
+        Vector3 angAcc = (angVel - lastAngularVelocity) / actualDeltaTime;
 
         float speedKmh = vel.magnitude * 3.6f;
 
@@ -103,6 +274,27 @@ public class DataLogger : MonoBehaviour
         WheelData fr = GetWheelData(vehicle != null ? vehicle.frontRight : null);
         WheelData rl = GetWheelData(vehicle != null ? vehicle.rearLeft : null);
         WheelData rr = GetWheelData(vehicle != null ? vehicle.rearRight : null);
+
+        float leftNormalForce = fl.normalForce + rl.normalForce;
+        float rightNormalForce = fr.normalForce + rr.normalForce;
+        float frontNormalForce = fl.normalForce + fr.normalForce;
+        float rearNormalForce = rl.normalForce + rr.normalForce;
+
+        float ltrTotal = CalculateLTR(rightNormalForce, leftNormalForce);
+        float ltrFront = CalculateLTR(fr.normalForce, fl.normalForce);
+        float ltrRear = CalculateLTR(rr.normalForce, rl.normalForce);
+
+        UpdateWheelLift(
+            leftNormalForce,
+            rightNormalForce,
+            fl,
+            fr,
+            rl,
+            rr,
+            actualDeltaTime
+        );
+
+        int anyWheelLift = leftWheelLift || rightWheelLift ? 1 : 0;
 
         float maxForwardSlip = Mathf.Max(
             Mathf.Abs(fl.forwardSlip),
@@ -118,28 +310,121 @@ public class DataLogger : MonoBehaviour
             Mathf.Abs(rr.sideSlip)
         );
 
-        float rolloverRisk = CalculateRolloverRisk(roll, latAcc, rollRate, maxSideSlip);
-        int isRollover = Vector3.Dot(transform.up, Vector3.up) < 0.5f ? 1 : 0;
+        float legacyRisk = CalculateLegacyRolloverRisk(
+            roll,
+            latAcc,
+            rollRate,
+            maxSideSlip
+        );
 
-        string line =
-            $"{Time.time:F3}," +
-            $"{pos.x:F3},{pos.y:F3},{pos.z:F3}," +
-            $"{vel.x:F3},{vel.y:F3},{vel.z:F3},{speedKmh:F3}," +
-            $"{acc.x:F3},{acc.y:F3},{acc.z:F3}," +
-            $"{longAcc:F3},{latAcc:F3},{vertAcc:F3}," +
-            $"{roll:F3},{pitch:F3},{yaw:F3}," +
-            $"{rollRate:F3},{pitchRate:F3},{yawRate:F3}," +
-            $"{angVel.x:F3},{angVel.y:F3},{angVel.z:F3}," +
-            $"{angAcc.x:F3},{angAcc.y:F3},{angAcc.z:F3}," +
-            $"{steerAngle:F3},{targetSteer:F3},{throttle:F3},{brake:F3}," +
-            $"{fl.grounded},{fr.grounded},{rl.grounded},{rr.grounded}," +
-            $"{fl.forwardSlip:F3},{fr.forwardSlip:F3},{rl.forwardSlip:F3},{rr.forwardSlip:F3}," +
-            $"{fl.sideSlip:F3},{fr.sideSlip:F3},{rl.sideSlip:F3},{rr.sideSlip:F3}," +
-            $"{maxForwardSlip:F3},{maxSideSlip:F3}," +
-            $"{rolloverRisk:F3},{isRollover}";
+        int isRollover =
+            Vector3.Dot(transform.up, Vector3.up) < 0.5f ? 1 : 0;
+
+        string line = string.Join(
+            ",",
+            EscapeCsv(datasetVersion),
+            EscapeCsv(layoutID),
+            EscapeCsv(runID),
+            EscapeCsv(scenarioID),
+            sampleIndex.ToString(CsvCulture),
+            F(runTime),
+            F(currentTime),
+
+            F(targetSpeedKmh),
+            EscapeCsv(frictionCondition),
+            EscapeCsv(roadCondition),
+            F(roadBankAngleDeg),
+            F(roadSlopeDeg),
+            F(vehicleBaseMassKg),
+
+            F(pos.x),
+            F(pos.y),
+            F(pos.z),
+
+            F(vel.x),
+            F(vel.y),
+            F(vel.z),
+            F(speedKmh),
+
+            F(acc.x),
+            F(acc.y),
+            F(acc.z),
+
+            F(longAcc),
+            F(latAcc),
+            F(vertAcc),
+
+            F(roll),
+            F(pitch),
+            F(yaw),
+
+            F(rollRate),
+            F(pitchRate),
+            F(yawRate),
+
+            F(angVel.x),
+            F(angVel.y),
+            F(angVel.z),
+
+            F(angAcc.x),
+            F(angAcc.y),
+            F(angAcc.z),
+
+            F(steerAngle),
+            F(targetSteer),
+            F(throttle),
+            F(brake),
+
+            fl.grounded.ToString(CsvCulture),
+            fr.grounded.ToString(CsvCulture),
+            rl.grounded.ToString(CsvCulture),
+            rr.grounded.ToString(CsvCulture),
+
+            F(fl.normalForce),
+            F(fr.normalForce),
+            F(rl.normalForce),
+            F(rr.normalForce),
+
+            F(leftNormalForce),
+            F(rightNormalForce),
+            F(frontNormalForce),
+            F(rearNormalForce),
+
+            F(ltrTotal),
+            F(ltrFront),
+            F(ltrRear),
+
+            BoolToInt(leftWheelLift),
+            BoolToInt(rightWheelLift),
+            anyWheelLift.ToString(CsvCulture),
+
+            F(fl.forwardSlip),
+            F(fr.forwardSlip),
+            F(rl.forwardSlip),
+            F(rr.forwardSlip),
+
+            F(fl.sideSlip),
+            F(fr.sideSlip),
+            F(rl.sideSlip),
+            F(rr.sideSlip),
+
+            F(maxForwardSlip),
+            F(maxSideSlip),
+
+            F(legacyRisk),
+            isRollover.ToString(CsvCulture)
+        );
 
         writer.WriteLine(line);
-        writer.Flush();
+
+        sampleIndex++;
+        rowsSinceFlush++;
+
+        if (rowsSinceFlush >= flushEveryRows)
+        {
+            writer.Flush();
+            rowsSinceFlush = 0;
+        }
 
         if (logToConsole)
             Debug.Log(line);
@@ -147,6 +432,7 @@ public class DataLogger : MonoBehaviour
         lastVelocity = vel;
         lastEuler = euler;
         lastAngularVelocity = angVel;
+        lastLogTime = currentTime;
     }
 
     WheelData GetWheelData(WheelCollider wheel)
@@ -156,25 +442,78 @@ public class DataLogger : MonoBehaviour
         if (wheel == null)
             return data;
 
-        WheelHit hit;
-
-        if (wheel.GetGroundHit(out hit))
+        if (wheel.GetGroundHit(out WheelHit hit))
         {
             data.grounded = 1;
             data.forwardSlip = hit.forwardSlip;
             data.sideSlip = hit.sidewaysSlip;
+            data.normalForce = Mathf.Max(0f, hit.force);
         }
         else
         {
             data.grounded = 0;
             data.forwardSlip = 0f;
             data.sideSlip = 0f;
+            data.normalForce = 0f;
         }
 
         return data;
     }
 
-    float CalculateRolloverRisk(float roll, float latAcc, float rollRate, float sideSlip)
+    float CalculateLTR(float rightForce, float leftForce)
+    {
+        float denominator = rightForce + leftForce;
+
+        if (denominator <= 0.001f)
+            return 0f;
+
+        return Mathf.Clamp(
+            (rightForce - leftForce) / denominator,
+            -1f,
+            1f
+        );
+    }
+
+    void UpdateWheelLift(
+        float leftForce,
+        float rightForce,
+        WheelData fl,
+        WheelData fr,
+        WheelData rl,
+        WheelData rr,
+        float deltaTime
+    )
+    {
+        bool leftLiftCandidate =
+            leftForce <= wheelLiftForceThreshold &&
+            fl.grounded == 0 &&
+            rl.grounded == 0;
+
+        bool rightLiftCandidate =
+            rightForce <= wheelLiftForceThreshold &&
+            fr.grounded == 0 &&
+            rr.grounded == 0;
+
+        if (leftLiftCandidate)
+            leftLiftTimer += deltaTime;
+        else
+            leftLiftTimer = 0f;
+
+        if (rightLiftCandidate)
+            rightLiftTimer += deltaTime;
+        else
+            rightLiftTimer = 0f;
+
+        leftWheelLift = leftLiftTimer >= wheelLiftDurationThreshold;
+        rightWheelLift = rightLiftTimer >= wheelLiftDurationThreshold;
+    }
+
+    float CalculateLegacyRolloverRisk(
+        float roll,
+        float latAcc,
+        float rollRate,
+        float sideSlip
+    )
     {
         float rollRisk = Mathf.InverseLerp(5f, 30f, Mathf.Abs(roll));
         float latRisk = Mathf.InverseLerp(3f, 8f, Mathf.Abs(latAcc));
@@ -198,24 +537,45 @@ public class DataLogger : MonoBehaviour
         return angle;
     }
 
+    string F(float value)
+    {
+        return value.ToString("F6", CsvCulture);
+    }
+
+    string EscapeCsv(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "";
+
+        if (value.Contains(",") || value.Contains("\"") || value.Contains("\n"))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+
+        return value;
+    }
+
+    string BoolToInt(bool value)
+    {
+        return value ? "1" : "0";
+    }
+
+    void CloseWriter()
+    {
+        if (writer == null)
+            return;
+
+        writer.Flush();
+        writer.Close();
+        writer = null;
+    }
+
     void OnApplicationQuit()
     {
-        if (writer != null)
-        {
-            writer.Flush();
-            writer.Close();
-            writer = null;
-        }
+        CloseWriter();
     }
 
     void OnDestroy()
     {
-        if (writer != null)
-        {
-            writer.Flush();
-            writer.Close();
-            writer = null;
-        }
+        CloseWriter();
     }
 
     struct WheelData
@@ -223,5 +583,6 @@ public class DataLogger : MonoBehaviour
         public int grounded;
         public float forwardSlip;
         public float sideSlip;
+        public float normalForce;
     }
 }
