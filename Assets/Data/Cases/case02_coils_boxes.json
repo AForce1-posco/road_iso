@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "bed": {
+    "widthX": 0.64,
+    "lengthZ": 0.24,
+    "wallHeight": 0.06
+  },
+  "cargo": [
+    {
+      "type": "박스 B-007",
+      "localPos": {
+        "x": -0.19,
+        "y": 0.0325,
+        "z": -0.0425
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "코일 C-001",
+      "localPos": {
+        "x": -0.015,
+        "y": 0.02,
+        "z": -0.065
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "코일 C-001",
+      "localPos": {
+        "x": 0.085,
+        "y": 0.02,
+        "z": -0.065
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-003",
+      "localPos": {
+        "x": 0.2125,
+        "y": 0.03,
+        "z": -0.09
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.19,
+        "y": 0.0775,
+        "z": -0.0425
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    }
+  ]
+}

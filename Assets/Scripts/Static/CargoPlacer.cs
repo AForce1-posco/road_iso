@@ -57,6 +57,14 @@ public class CargoPlacer : MonoBehaviour
     [Header("저장 (비우면 persistentDataPath 사용)")]
     public string savePath = "";
 
+    [Header("불러오기 (수정 후 재저장 가능)")]
+    [Tooltip("불러올 파일명 (확장자 생략 가능). 비우면 기본 저장본. 예: case03_left_heavy_pipes, test_20260703_...")]
+    public string loadFileName = "";
+    [Tooltip("체크=TestCases 폴더에서, 해제=Cases 폴더에서 불러옴")]
+    public bool loadFromTestFolder = false;
+    [Tooltip("체크 시 Play하자마자 loadFileName 자동 로드")]
+    public bool autoLoadOnPlay = false;
+
     [Header("카메라")]
     public bool autoFrameCamera = true;
     public CameraMode cameraMode = CameraMode.Angled;
@@ -171,6 +179,9 @@ public class CargoPlacer : MonoBehaviour
         FrameCamera();
         ApplySceneLook();
         RaiseChanged();
+
+        if (autoLoadOnPlay && !string.IsNullOrEmpty(loadFileName))
+            LoadLayout(); // Play 직후 지정 배치 자동 로드
     }
 
     private void ApplySceneLook()
@@ -209,6 +220,8 @@ public class CargoPlacer : MonoBehaviour
     }
 
     // ── 입력 ───────────────────────────────────────────────────────────────
+    private Item dragItem; // 가운데 버튼으로 끌고 있는 화물
+
     private void HandleKeyboard()
     {
         if (Input.GetKeyDown(KeyCode.R)) placementRot = Quaternion.Euler(0f, 90f, 0f) * placementRot;
@@ -218,12 +231,39 @@ public class CargoPlacer : MonoBehaviour
 
     private void HandleMouse()
     {
+        if (cam == null) cam = Camera.main;
+        if (cam == null) return;
+        bool overUI = PointerOverUI != null && PointerOverUI();
+
+        // 가운데 버튼(휠 클릭) 드래그 = 이미 놓인 화물 이동
+        if (Input.GetMouseButtonDown(2) && !overUI)
+        {
+            Ray r = cam.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(r, out RaycastHit h, 1000f))
+            {
+                Item it = FindItem(h.collider);
+                if (it != null)
+                {
+                    dragItem = it;
+                    if (dragItem.rb != null) dragItem.rb.isKinematic = true; // 드래그 중 물리 정지
+                }
+            }
+        }
+        if (dragItem != null && Input.GetMouseButton(2)) { DragMove(); return; }
+        if (dragItem != null && Input.GetMouseButtonUp(2))
+        {
+            dragItem.data.worldPos = dragItem.go.transform.position;
+            if (physicsOn && !dragItem.secured && dragItem.rb != null) dragItem.rb.isKinematic = false;
+            dragItem = null;
+            RaiseChanged();
+            return;
+        }
+
+        // 좌클릭 배치 / 우클릭 제거
         bool left = Input.GetMouseButtonDown(0);
         bool right = Input.GetMouseButtonDown(1);
         if (!left && !right) return;
-        if (PointerOverUI != null && PointerOverUI()) return;
-        if (cam == null) cam = Camera.main;
-        if (cam == null) return;
+        if (overUI) return;
 
         Ray ray = cam.ScreenPointToRay(Input.mousePosition);
         if (!Physics.Raycast(ray, out RaycastHit hit, 1000f)) return;
@@ -237,6 +277,27 @@ public class CargoPlacer : MonoBehaviour
             Item it = FindItem(hit.collider);
             if (it != null) RemoveItem(it);
         }
+    }
+
+    /// <summary>드래그 중 화물을 트레이 바닥 평면 위에서 XZ 이동(벽 안 클램프, 긴 화물은 벽 위 안착).</summary>
+    private void DragMove()
+    {
+        Plane plane = new Plane(Vector3.up, new Vector3(0f, BedTopY, 0f));
+        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        if (!plane.Raycast(ray, out float dist)) return;
+        Vector3 p = ray.GetPoint(dist);
+
+        Vector3 ext = dragItem.mr != null ? dragItem.mr.bounds.extents : dragItem.type.sizeM * 0.5f;
+        float x = ClampInside(p.x, transform.position.x, bedWidthX * 0.5f, ext.x);
+        float z = ClampInside(p.z, transform.position.z, bedLengthZ * 0.5f, ext.z);
+        if (snapToCm) { x = Mathf.Round(x * 100f) / 100f; z = Mathf.Round(z * 100f) / 100f; }
+
+        bool overSized = ext.x > bedWidthX * 0.5f || ext.z > bedLengthZ * 0.5f;
+        float restY = (overSized && hasWalls) ? WallTopY : BedTopY;
+        Vector3 pos = new Vector3(x, restY + ext.y + 0.001f, z);
+        dragItem.go.transform.position = pos;
+        dragItem.data.worldPos = pos;
+        RaiseChanged();
     }
 
     // ── 배치 ───────────────────────────────────────────────────────────────
@@ -257,11 +318,23 @@ public class CargoPlacer : MonoBehaviour
         float z = ClampInside(surfacePoint.z, cz, bedLengthZ * 0.5f, ext.z);
         if (snapToCm) { x = Mathf.Round(x * 100f) / 100f; z = Mathf.Round(z * 100f) / 100f; }
 
-        // 클램프된 위치에서 아래로 레이 → 바닥 또는 기존 화물 위에 정확히 안착
-        float restY = BedTopY;
-        float rayStartY = transform.position.y + 3f;
-        if (Physics.Raycast(new Vector3(x, rayStartY, z), Vector3.down, out RaycastHit down, 5f))
-            restY = down.point.y;
+        // 트레이보다 긴 화물(X 또는 Z 축)은 바닥에 놓으면 벽을 관통 →
+        // 벽 위에 걸치도록 안착면을 벽 상단으로 올린다 (현실의 "걸침").
+        bool overSized = ext.x > bedWidthX * 0.5f || ext.z > bedLengthZ * 0.5f;
+
+        float restY;
+        if (overSized && hasWalls)
+        {
+            restY = WallTopY; // 벽 상단에 걸침 (레이캐스트 대신 벽 높이 사용)
+        }
+        else
+        {
+            // 클램프된 위치에서 아래로 레이 → 바닥 또는 기존 화물 위에 정확히 안착
+            restY = BedTopY;
+            float rayStartY = transform.position.y + 3f;
+            if (Physics.Raycast(new Vector3(x, rayStartY, z), Vector3.down, out RaycastHit down, 5f))
+                restY = down.point.y;
+        }
 
         Vector3 center = new Vector3(x, restY + ext.y + 0.001f, z);
         it.go.transform.position = center;
@@ -559,16 +632,27 @@ public class CargoPlacer : MonoBehaviour
         Debug.Log($"배치 저장 완료 ({file.cargo.Count}개): {path}");
     }
 
-    /// <summary>배치 자동화용: Assets/Data/Cases/case_타임스탬프.json 로 케이스 누적 저장.</summary>
+    /// <summary>정적 씬 테스트용 저장: Assets/Data/TestCases/test_타임스탬프.json (Cases와 분리).</summary>
     public void SaveCase()
     {
-        string dir = Path.Combine(Application.dataPath, "Data", "Cases");
-        Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, $"case_{System.DateTime.Now:yyyyMMdd_HHmmss}.json");
+        Directory.CreateDirectory(CargoPaths.TestCasesDir);
+        string path = Path.Combine(CargoPaths.TestCasesDir, $"test_{System.DateTime.Now:yyyyMMdd_HHmmss}.json");
         SaveLayout(path);
     }
 
-    public void LoadLayout() => LoadLayout(ResolvedPath);
+    /// <summary>
+    /// 불러오기 대상 경로. loadFileName이 있으면 해당 폴더(TestCases/Cases)의 그 파일,
+    /// 없으면 savePath/기본 저장본. 확장자 생략 가능.
+    /// </summary>
+    private string LoadResolvedPath()
+    {
+        if (string.IsNullOrEmpty(loadFileName)) return ResolvedPath;
+        string n = loadFileName.EndsWith(".json") ? loadFileName : loadFileName + ".json";
+        string dir = loadFromTestFolder ? CargoPaths.TestCasesDir : CargoPaths.CasesDir;
+        return Path.Combine(dir, n);
+    }
+
+    public void LoadLayout() => LoadLayout(LoadResolvedPath());
 
     public void LoadLayout(string path)
     {

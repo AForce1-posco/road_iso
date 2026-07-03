@@ -15,13 +15,32 @@ public class DataLogger : MonoBehaviour
     public CargoBedLoader cargoLoader;
 
     private Rigidbody rb;
-    private StreamWriter writer;
+    private StreamWriter writer;         // 케이스별 시계열 파일 (기존 유지)
+    private StreamWriter combinedWriter; // 배치 전체 시계열 통합 파일 (신규)
 
     private float timer;
     private bool recording;              // BeginRun~EndRun 사이에만 true (케이스 주행 구간)
     private Vector3 lastVelocity;
     private Vector3 lastEuler;
     private Vector3 lastAngularVelocity;
+
+    // 통합 파일용: 현재 케이스 메타 + 배치 식별자
+    private string batchId = "";
+    private string curCaseName = "";
+    private int curCargoCount;
+    private float curTotalMassKg;
+    private float curSecuredFrac;
+
+    // 케이스별·통합 파일이 공유하는 시계열 컬럼 헤더
+    private const string COLUMNS =
+        "Time,PosX,PosY,PosZ,VelX,VelY,VelZ,SpeedKmh,AccX,AccY,AccZ," +
+        "LongAcc,LatAcc,VertAcc,Roll,Pitch,Yaw,RollRate,PitchRate,YawRate," +
+        "AngVelX,AngVelY,AngVelZ,AngAccX,AngAccY,AngAccZ," +
+        "SteerAngle,TargetSteer,Throttle,Brake," +
+        "FL_Grounded,FR_Grounded,RL_Grounded,RR_Grounded," +
+        "FL_ForwardSlip,FR_ForwardSlip,RL_ForwardSlip,RR_ForwardSlip," +
+        "FL_SideSlip,FR_SideSlip,RL_SideSlip,RR_SideSlip," +
+        "MaxForwardSlip,MaxSideSlip,RolloverRisk,IsRollover";
 
     void Start()
     {
@@ -61,38 +80,34 @@ public class DataLogger : MonoBehaviour
 
         string path = Path.Combine(Application.persistentDataPath, $"{baseName}_{stamp}{cargoTag}.csv");
 
-        writer = new StreamWriter(path, false);
-
-        writer.WriteLine(
-            "Time," +
-            "PosX,PosY,PosZ," +
-            "VelX,VelY,VelZ,SpeedKmh," +
-            "AccX,AccY,AccZ," +
-            "LongAcc,LatAcc,VertAcc," +
-            "Roll,Pitch,Yaw," +
-            "RollRate,PitchRate,YawRate," +
-            "AngVelX,AngVelY,AngVelZ," +
-            "AngAccX,AngAccY,AngAccZ," +
-            "SteerAngle,TargetSteer,Throttle,Brake," +
-            "FL_Grounded,FR_Grounded,RL_Grounded,RR_Grounded," +
-            "FL_ForwardSlip,FR_ForwardSlip,RL_ForwardSlip,RR_ForwardSlip," +
-            "FL_SideSlip,FR_SideSlip,RL_SideSlip,RR_SideSlip," +
-            "MaxForwardSlip,MaxSideSlip," +
-            "RolloverRisk,IsRollover"
-        );
-
-        Debug.Log("CSV 저장 시작: " + path);
+        try
+        {
+            writer = new StreamWriter(path, false);
+            writer.WriteLine(COLUMNS);
+            Debug.Log("케이스 시계열 CSV 저장 시작: " + path);
+        }
+        catch (System.Exception e)
+        {
+            writer = null;
+            Debug.LogError($"케이스 시계열 파일 열기 실패: {path}\n{e.Message}");
+        }
     }
 
-    void Update()
+    // 물리 스텝 기반 기록 — Update(프레임)로 하면 배속(timeScale) 시 한 프레임에 시뮬시간이 크게
+    // 점프해 0.1초 간격이 깨진다. FixedUpdate는 배속과 무관하게 항상 fixedDeltaTime(0.01s)로 돌므로
+    // 여기서 interval마다 찍으면 배속 몇 배든 정확히 0.1초 간격 보장.
+    void FixedUpdate()
     {
         if (!recording) return;          // BeginRun 전 / EndRun 후엔 기록 안 함 (안정화·리셋 구간 제외)
 
-        timer += Time.deltaTime;
+        // 녹화 중인데 파일이 닫혀 있으면(예외 등) 재생성 시도 — 데이터 유실·크래시 방지
+        if (writer == null) EnsureWriter();
+
+        timer += Time.fixedDeltaTime;
         if (timer < interval)
             return;
 
-        timer = 0f;
+        timer -= interval;              // 누적 오차 방지 (0으로 리셋하면 미세 드리프트)
         LogData();                        // 파일은 BeginRun()에서 이미 열림
     }
 
@@ -167,8 +182,21 @@ public class DataLogger : MonoBehaviour
             $"{maxForwardSlip:F3},{maxSideSlip:F3}," +
             $"{rolloverRisk:F3},{isRollover}";
 
-        writer.WriteLine(line);
-        writer.Flush();
+        // 케이스별 파일 (열려 있을 때만 — 파일 핸들 null이어도 크래시 금지)
+        if (writer != null)
+        {
+            writer.WriteLine(line);
+            writer.Flush();
+        }
+
+        // 통합 파일에도 같은 행 + 케이스 식별 컬럼을 앞에 붙여 기록
+        if (combinedWriter != null)
+        {
+            combinedWriter.WriteLine(
+                $"{batchId},{curCaseName},{curCargoCount}," +
+                $"{curTotalMassKg:F1},{curSecuredFrac:F3}," + line);
+            combinedWriter.Flush();
+        }
 
         if (logToConsole)
             Debug.Log(line);
@@ -227,13 +255,41 @@ public class DataLogger : MonoBehaviour
         return angle;
     }
 
-    /// <summary>케이스 주행 시작: 새 파일을 열고 샘플링 시작.
-    /// 적재(Load) 후에 호출해야 파일명에 화물정보가 정확히 들어감.
-    /// 케이스 1개 = 파일 1개 = 그 주행 데이터 전부(안정화·리셋 구간 제외).</summary>
-    public void BeginRun()
+    /// <summary>배치(여러 케이스 일괄) 시작: 전체 케이스가 한 파일에 쌓이는 통합 시계열 파일을 연다.
+    /// Assets/Data/Results/combined_timeseries_&lt;runId&gt;.csv. 케이스 식별 컬럼이 앞에 붙는다.</summary>
+    public void BeginBatch(string runId)
     {
-        CloseWriter();                    // 혹시 열려 있던 파일 정리
-        EnsureWriter();                   // 새 파일 생성 (화물 태그 포함)
+        batchId = runId;
+        CargoPaths.EnsureAll();
+        string path = Path.Combine(CargoPaths.ResultsDir, $"combined_timeseries_{runId}.csv");
+        combinedWriter = new StreamWriter(path, false);
+        combinedWriter.WriteLine("run_id,case_name,cargo_count,total_mass_kg,secured_frac," + COLUMNS);
+        Debug.Log("통합 시계열 CSV 저장 시작: " + path);
+    }
+
+    /// <summary>배치 종료: 통합 파일을 닫는다.</summary>
+    public void EndBatch()
+    {
+        if (combinedWriter != null)
+        {
+            combinedWriter.Flush();
+            combinedWriter.Close();
+            combinedWriter = null;
+        }
+    }
+
+    /// <summary>케이스 주행 시작: 케이스별 새 파일을 열고 샘플링 시작.
+    /// 적재(Load) 후에 호출해야 파일명·메타에 화물정보가 정확히 들어감.
+    /// caseName/cargoCount/totalMass/securedFrac은 통합 파일 식별 컬럼에 쓰임.</summary>
+    public void BeginRun(string caseName, int cargoCount, float totalMassKg, float securedFrac)
+    {
+        curCaseName = caseName;
+        curCargoCount = cargoCount;
+        curTotalMassKg = totalMassKg;
+        curSecuredFrac = securedFrac;
+
+        CloseWriter();                    // 혹시 열려 있던 케이스 파일 정리
+        EnsureWriter();                   // 새 케이스 파일 생성 (화물 태그 포함)
         // 리셋 텔레포트 여파가 첫 샘플 미분값(가속도 등)에 튀지 않게 초기화
         if (rb != null)
         {
@@ -245,14 +301,14 @@ public class DataLogger : MonoBehaviour
         recording = true;
     }
 
-    /// <summary>케이스 주행 종료: 파일을 닫고 샘플링 정지.</summary>
+    /// <summary>케이스 주행 종료: 케이스 파일을 닫고 샘플링 정지 (통합 파일은 유지).</summary>
     public void EndRun()
     {
         recording = false;
         CloseWriter();
     }
 
-    /// <summary>배치 일괄 실행용(하위호환): 현재 파일을 닫는다. BeginRun/EndRun 사용 시 불필요.</summary>
+    /// <summary>배치 일괄 실행용(하위호환): 현재 케이스 파일을 닫는다.</summary>
     public void StartNewFile() => CloseWriter();
 
     private void CloseWriter()
@@ -265,25 +321,9 @@ public class DataLogger : MonoBehaviour
         }
     }
 
-    void OnApplicationQuit()
-    {
-        if (writer != null)
-        {
-            writer.Flush();
-            writer.Close();
-            writer = null;
-        }
-    }
+    void OnApplicationQuit() { CloseWriter(); EndBatch(); }
 
-    void OnDestroy()
-    {
-        if (writer != null)
-        {
-            writer.Flush();
-            writer.Close();
-            writer = null;
-        }
-    }
+    void OnDestroy() { CloseWriter(); EndBatch(); }
 
     struct WheelData
     {

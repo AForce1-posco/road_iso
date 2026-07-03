@@ -43,6 +43,11 @@ public class DynamicSceneController : MonoBehaviour
     [Tooltip("겹침 복구 최대 사출 속도 (m/s). Unity 기본 10은 화물을 발사시킴. 0이면 변경 안 함")]
     public float maxDepenetrationVelocity = 2f;
 
+    [Header("배속 (데이터 수집 가속 — 물리 정확도는 유지)")]
+    [Tooltip("시뮬 배속. 10 = 10배 빨리 (10분→1분). 물리 스텝 크기는 그대로라 결과 동일. " +
+             "CPU가 못 따라가면 실제 배속이 이보다 낮아질 뿐(안전). 화물 튐이 과장되면 낮출 것. 권장 5~20")]
+    public float simSpeed = 10f;
+
     private Rigidbody truckRb;
     private Vector3 startPos;
     private Quaternion startRot;
@@ -53,6 +58,11 @@ public class DynamicSceneController : MonoBehaviour
         if (physicsTimestep > 0f) Time.fixedDeltaTime = physicsTimestep;
         if (maxDepenetrationVelocity > 0f) Physics.defaultMaxDepenetrationVelocity = maxDepenetrationVelocity;
 
+        // 배속: timeScale만 올리고 fixedDeltaTime(물리 스텝 크기)은 그대로 → 스텝 정확도 보존.
+        // maximumDeltaTime을 넉넉히 잡아야 Unity가 배속을 조기에 제한하지 않음(못 따라가면 자동으로 느려질 뿐).
+        Time.timeScale = Mathf.Max(1f, simSpeed);
+        Time.maximumDeltaTime = Mathf.Clamp(Time.fixedDeltaTime * Mathf.Max(1f, simSpeed) * 3f, 0.33f, 1f);
+
         // 인스펙터에서 비워두면 씬에서 자동 검색 (각 1개씩만 존재하는 컴포넌트들)
         if (loader == null) loader = FindObjectOfType<CargoBedLoader>();
         if (recorder == null) recorder = FindObjectOfType<CargoRiskRecorder>();
@@ -62,6 +72,12 @@ public class DynamicSceneController : MonoBehaviour
 
         // 적재가 끝나기 전에 출발하지 않게 잠금
         if (pursuit != null) pursuit.enabled = false;
+    }
+
+    void OnDisable()
+    {
+        // 배속 원복 — Play 종료/씬 전환 후 timeScale이 남아 다음 실행을 꼬이게 하지 않도록
+        Time.timeScale = 1f;
     }
 
     void Start()
@@ -90,15 +106,20 @@ public class DynamicSceneController : MonoBehaviour
 
         // 케이스 목록 (이름순 = case01 → case10. Ordinal 정렬이라 순서 보장)
         var cases = new List<string>();
-        if (runAllCases && Directory.Exists(CargoBedLoader.CasesDir))
+        if (runAllCases && Directory.Exists(CargoPaths.CasesDir))
         {
-            cases.AddRange(Directory.GetFiles(CargoBedLoader.CasesDir, "*.json"));
+            cases.AddRange(Directory.GetFiles(CargoPaths.CasesDir, "*.json"));
             cases.Sort(System.StringComparer.Ordinal);
         }
         if (runAllCases && cases.Count == 0)
             Debug.LogWarning("Cases 폴더에 케이스가 없음 — loader 설정대로 1회만 주행");
 
         int total = (runAllCases && cases.Count > 0) ? cases.Count : 1;
+
+        // 통합 시계열 파일 하나 열기 (모든 케이스가 여기에 쌓임)
+        string batchRunId = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        if (dataLogger != null) dataLogger.BeginBatch(batchRunId);
+
         for (int i = 0; i < total; i++)
         {
             if (runAllCases && cases.Count > 0)
@@ -111,7 +132,8 @@ public class DynamicSceneController : MonoBehaviour
                 yield return ResetForNextRun();
         }
 
-        Debug.Log($"■ 전체 완료: {total}개 케이스 주행 끝 → results.csv + 시계열 CSV {total}개 확인");
+        if (dataLogger != null) dataLogger.EndBatch();
+        Debug.Log($"■ 전체 완료: {total}개 케이스 → results.csv + 케이스별 시계열 {total}개 + 통합 시계열 1개 (combined_timeseries_{batchRunId}.csv)");
 #if UNITY_EDITOR
         if (quitPlayOnFinish) UnityEditor.EditorApplication.isPlaying = false;
 #endif
@@ -137,12 +159,23 @@ public class DynamicSceneController : MonoBehaviour
         loader.ReleaseFreeCargo();
         yield return new WaitForFixedUpdate(); // 해제 반영 한 프레임
 
-        recorder.Begin();
-        if (dataLogger != null) dataLogger.BeginRun(); // 시계열도 이 시점부터 (주행 구간만 → 케이스당 파일 1개)
-        pursuit.enabled = true;
+        // 케이스 메타 계산 (통합 CSV 식별 컬럼용)
         string caseName = string.IsNullOrEmpty(loader.LastLoadedPath)
             ? "(알 수 없음)"
             : Path.GetFileNameWithoutExtension(loader.LastLoadedPath);
+        float totalMass = 0f, securedMass = 0f;
+        foreach (var c in loader.Loaded)
+        {
+            float m = c.type.massKg * loader.massScale;
+            totalMass += m;
+            if (c.secured) securedMass += m;
+        }
+        float securedFrac = totalMass > 0f ? securedMass / totalMass : 0f;
+
+        recorder.Begin();
+        // 시계열도 이 시점부터 (주행 구간만 → 케이스당 파일 1개 + 통합 파일에 누적)
+        if (dataLogger != null) dataLogger.BeginRun(caseName, count, totalMass, securedFrac);
+        pursuit.enabled = true;
         Debug.Log($"▶ 주행 시작 — 배치 케이스: {caseName} (화물 {count}개)");
 
         // 종료 대기: ISO 완주 / 전복(+grace) / 타임아웃

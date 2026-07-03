@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "bed": {
+    "widthX": 0.64,
+    "lengthZ": 0.24,
+    "wallHeight": 0.06
+  },
+  "cargo": [
+    {
+      "type": "박스 B-004",
+      "localPos": {
+        "x": -0.235,
+        "y": 0.03,
+        "z": -0.065
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": -0.105,
+        "y": 0.06,
+        "z": -0.065
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-006",
+      "localPos": {
+        "x": 0.03,
+        "y": 0.0425,
+        "z": -0.0675
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-003",
+      "localPos": {
+        "x": 0.1925,
+        "y": 0.03,
+        "z": -0.09
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-002",
+      "localPos": {
+        "x": -0.235,
+        "y": 0.0625,
+        "z": -0.065
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "납벨트 W-001",
+      "localPos": {
+        "x": 0.03,
+        "y": 0.08,
+        "z": -0.0675
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    }
+  ]
+}

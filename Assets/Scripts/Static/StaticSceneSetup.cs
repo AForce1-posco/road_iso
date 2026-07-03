@@ -15,6 +15,14 @@ public class StaticSceneSetup : MonoBehaviour
     public float bedLengthZ = 0.24f;
     public float wallHeight = 0.06f;
 
+    [Header("불러오기 (Play 후 대시보드 '불러오기' 버튼으로 로드)")]
+    [Tooltip("불러올 파일명 (확장자 생략 가능). 비우면 로드 안 함. 예: case03_left_heavy_pipes, test_2026...")]
+    public string loadFileName = "";
+    [Tooltip("체크=TestCases 폴더, 해제=Cases 폴더")]
+    public bool loadFromTestFolder = false;
+    [Tooltip("체크 시 Play하자마자 자동으로 불러옴 (버튼 안 눌러도 됨)")]
+    public bool autoLoadOnPlay = false;
+
     void Awake()
     {
         if (Camera.main == null)
@@ -40,6 +48,9 @@ public class StaticSceneSetup : MonoBehaviour
         placer.bedWidthX = bedWidthX;
         placer.bedLengthZ = bedLengthZ;
         placer.wallHeight = wallHeight;
+        placer.loadFileName = loadFileName;           // 부트스트랩에서 지정한 불러오기 대상 전달
+        placer.loadFromTestFolder = loadFromTestFolder;
+        placer.autoLoadOnPlay = autoLoadOnPlay;
         // AddComponent 시점에 placer.Awake가 기본 크기로 로드셀을 이미 계산했으므로 재적용
         if (placer.useDefaultSupports)
             placer.supports = SupportConfig.Default(bedWidthX, bedLengthZ);

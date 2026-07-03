@@ -22,14 +22,47 @@ public class CargoBedLoader : MonoBehaviour
     public float massScale = 100f; // 질량 배율 (화물이 트럭에 유의미하게 작용하도록 튜닝)
 
     [Header("배치 선택 (우선순위: layoutPath > caseName > Cases 폴더 첫 파일)")]
-    [Tooltip("케이스 파일명 (Assets/Data/Cases/ 안, 확장자 생략 가능). 예: case03_left_heavy_pipes")]
+    [Tooltip("케이스 파일명 (확장자 생략 가능). 예: case03_left_heavy_pipes")]
     public string caseName = "";
+    [Tooltip("체크=TestCases 폴더에서 caseName 찾기, 해제=Cases 폴더")]
+    public bool useTestFolder = false;
     [Tooltip("특정 파일을 직접 지정할 때만 사용 (정적 씬 저장본을 쓰려면 여기에 경로 입력)")]
     public string layoutPath = "";
 
     [Header("적재함 트레이")]
     public bool buildTray = true;
     public Material trayMaterial;
+
+    [Header("물리 재질 (착지 에너지 소산 — 강체에 없는 '쿵 자리잡기'를 마찰로 대신)")]
+    [Tooltip("트레이·화물 표면 마찰 (높을수록 안 미끄러지고 착지 후 자리 잡음)")]
+    public float surfaceFriction = 0.8f;
+    [Tooltip("반발 계수 (0 = 안 튐)")]
+    public float surfaceBounciness = 0f;
+
+    private PhysicMaterial gripMat;
+
+    /// <summary>트레이·화물 공용 접지 재질 (마찰↑·반발 0). 처음 요청 시 1회 생성.</summary>
+    private PhysicMaterial GripMaterial()
+    {
+        if (gripMat == null)
+        {
+            gripMat = new PhysicMaterial("CargoGrip")
+            {
+                dynamicFriction = surfaceFriction,
+                staticFriction = surfaceFriction,
+                bounciness = surfaceBounciness,
+                frictionCombine = PhysicMaterialCombine.Maximum, // 상대 표면과 만나도 높은 마찰 유지
+                bounceCombine = PhysicMaterialCombine.Minimum,   // 상대가 튀어도 반발 0 유지
+            };
+        }
+        return gripMat;
+    }
+
+    private void ApplyGrip(GameObject go)
+    {
+        foreach (Collider col in go.GetComponentsInChildren<Collider>())
+            col.sharedMaterial = GripMaterial();
+    }
 
     [Header("씬 인벤토리 (비우면 자동 검색)")]
     [Tooltip("지정/발견되면 CargoFactory 대신 인벤토리 진열품을 복제해 적재 — 씬에서 바꾼 모양이 반영됨")]
@@ -64,7 +97,7 @@ public class CargoBedLoader : MonoBehaviour
         new Color(0.85f, 0.75f, 0.35f),
     };
 
-    public static string CasesDir => Path.Combine(Application.dataPath, "Data/Cases");
+    public static string CasesDir => CargoPaths.CasesDir;
 
     public string ResolvedPath
     {
@@ -73,20 +106,21 @@ public class CargoBedLoader : MonoBehaviour
             // 1) 직접 경로 지정이 최우선
             if (!string.IsNullOrEmpty(layoutPath)) return layoutPath;
 
-            // 2) 케이스 이름 지정 → Assets/Data/Cases/<이름>.json
+            // 2) 케이스 이름 지정 → Cases 또는 TestCases 폴더의 <이름>.json
             if (!string.IsNullOrEmpty(caseName))
             {
                 string n = caseName.EndsWith(".json") ? caseName : caseName + ".json";
-                return Path.Combine(CasesDir, n);
+                string dir = useTestFolder ? CargoPaths.TestCasesDir : CargoPaths.CasesDir;
+                return Path.Combine(dir, n);
             }
 
             // 3) 비워두면 Cases 폴더의 첫 파일(정렬순 = case01)
-            if (Directory.Exists(CasesDir))
+            if (Directory.Exists(CargoPaths.CasesDir))
             {
-                string[] files = Directory.GetFiles(CasesDir, "*.json");
+                string[] files = Directory.GetFiles(CargoPaths.CasesDir, "*.json");
                 if (files.Length > 0)
                 {
-                    System.Array.Sort(files);
+                    System.Array.Sort(files, System.StringComparer.Ordinal);
                     return files[0];
                 }
             }
@@ -143,30 +177,26 @@ public class CargoBedLoader : MonoBehaviour
             // 인벤토리 진열품 복제 우선 (씬에서 커스텀한 모양 반영), 없으면 팩토리 생성
             GameObject go = inventory != null ? inventory.CreateInstance(t.name, scale) : null;
             if (go == null) go = CargoFactory.Create(t, scale, ColorFor(t));
+            ApplyGrip(go);                              // 화물 콜라이더에 접지 재질 (마찰↑·반발 0)
             go.transform.SetParent(bedAnchor, false); // 트럭(bedAnchor)의 자식으로 유지 → 리셋·이동을 항상 따라감
             // 저장된 localEuler는 최종 회전(형상 기본회전 포함) → 직접 덮어씀
             go.transform.localRotation = Quaternion.Euler(e.localEuler);
             go.transform.localPosition = e.localPos * scale;
             Vector3 initLocal = go.transform.localPosition;
 
-            var rb = go.AddComponent<Rigidbody>();
-            rb.mass = Mathf.Max(0.01f, t.massKg * massScale);
-            rb.interpolation = RigidbodyInterpolation.Interpolate;
-
+            Rigidbody rb = null;
             if (e.secured && truckBody != null)
             {
-                // 고정 화물: dynamic + FixedJoint로 트럭에 강체 결박.
-                // kinematic 자식으로 매달면 중첩 리지드바디가 되어 트럭이 안 움직임 → 반드시 부모연결 해제.
-                go.transform.SetParent(null, true);   // 월드로 독립 (중첩 방지)
-                rb.isKinematic = false;
-                rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
-                var joint = go.AddComponent<FixedJoint>();
-                joint.connectedBody = truckBody;      // 트럭에 결박 → 같이 움직이며 하중 기여
-                joint.enableCollision = false;
+                // 고정 화물: Rigidbody 없이 콜라이더만 트럭(bedAnchor) 자식으로 유지 →
+                // 트럭 몸체의 일부(compound collider)로 용접됨. 질량·CoM은 ApplyLoadToTruck에서 수동 합산.
+                // (별도 Rigidbody가 없으니 nested-rigidbody로 트럭이 멈추거나 스폰 시 튕기는 문제 없음)
             }
             else
             {
-                // 자유 화물: 안정 배치를 위해 우선 kinematic-부모연결 → 출발 전 ReleaseFreeCargo()에서 물리 해제.
+                // 자유 화물: 우선 kinematic-부모연결(안정 배치) → 출발 전 ReleaseFreeCargo()에서 물리 해제.
+                rb = go.AddComponent<Rigidbody>();
+                rb.mass = Mathf.Max(0.01f, t.massKg * massScale);
+                rb.interpolation = RigidbodyInterpolation.Interpolate;
                 rb.isKinematic = true;
             }
 
@@ -219,7 +249,7 @@ public class CargoBedLoader : MonoBehaviour
                 c.rb.velocity = truckBody.GetPointVelocity(c.go.transform.position); // 매끄러운 인계 (2020.3: velocity)
             released++;
         }
-        ApplyLoadToTruck(); // 해제된 자유화물 제외하고 트럭 무게중심 재계산(중복 방지)
+        if (released > 0) ApplyLoadToTruck(); // 해제된 게 있을 때만 트럭 무게중심 재계산 (전부 고정이면 중복 호출 안 함)
         Debug.Log($"자유 화물 물리 해제: {released}개");
     }
 
@@ -252,7 +282,9 @@ public class CargoBedLoader : MonoBehaviour
         foreach (LoadedCargo c in loaded)
         {
             if (c.go == null || c.type == null) continue;
-            if (c.rb != null && !c.rb.isKinematic) continue; // 이미 물리 해제된 자유화물은 실제 바디라 제외(중복 방지)
+            // 물리 해제된 자유화물(동적 바디)만 제외 — 실제 접촉으로 트럭에 작용하므로 이중 계산 방지.
+            // 고정 화물(rb==null, 트럭 몸체에 용접)과 아직 kinematic인 자유화물은 여기서 질량·CoM 합산.
+            if (c.rb != null && !c.rb.isKinematic) continue;
             float cm = c.type.massKg * massScale;
             Vector3 localToTruck = truckBody.transform.InverseTransformPoint(c.go.transform.position);
             weighted += cm * localToTruck;
@@ -293,6 +325,7 @@ public class CargoBedLoader : MonoBehaviour
         b.transform.localPosition = localPos;
         b.transform.localScale = scaleV;
         b.GetComponent<MeshRenderer>().sharedMaterial = mat;
+        b.GetComponent<Collider>().sharedMaterial = GripMaterial(); // 트레이 바닥·벽 접지 재질
     }
 
     // Edit 모드: 트레이 윤곽선 미리보기 / Play 중: 트럭 실제 무게중심(CoM) 마젠타 구슬
