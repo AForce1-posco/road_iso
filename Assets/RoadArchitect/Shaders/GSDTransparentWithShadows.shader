@@ -92,11 +92,11 @@ ENDCG
 			#include "UnityCG.cginc"
 			#include "AutoLight.cginc"
  
-			struct v2f { 
+			struct v2f {
 				float2 uv_MainTex : TEXCOORD1;
 				float4 pos : SV_POSITION;
 				LIGHTING_COORDS(3,4)
-				float3	lightDir;
+				float3	lightDir : TEXCOORD2; // Metal은 모든 멤버에 시맨틱 필수
 			};
  
 			float4 _MainTex_ST;

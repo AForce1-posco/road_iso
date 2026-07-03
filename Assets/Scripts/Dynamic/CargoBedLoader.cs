@@ -1,0 +1,332 @@
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+
+/// <summary>
+/// staging_export.json(정적 배치)을 읽어 트럭 적재함(bedAnchor)에 화물을 싣는다.
+/// 정적 1:10 배치를 scale배로 확대해 트럭에 올림(전복 임계는 스케일 불변).
+/// 자유 화물 = 동적 Rigidbody(쏠림/굴러감, 접촉으로 트럭에 작용),
+/// 고정 화물 = FixedJoint로 트럭에 결박(같이 움직이며 하중 기여).
+/// </summary>
+public class CargoBedLoader : MonoBehaviour
+{
+    [Header("트럭 연결")]
+    public Transform bedAnchor;    // 적재함 바닥 중심(트럭 본체의 자식)
+    public Rigidbody truckBody;    // 고정 화물을 결박할 트럭 Rigidbody
+
+    [Header("화물 종류 (정적과 동일하게)")]
+    public CargoType[] cargoTypes;
+
+    [Header("스케일")]
+    public float scale = 10f;      // 위치·크기 배율 (1:10 → 실물)
+    public float massScale = 100f; // 질량 배율 (화물이 트럭에 유의미하게 작용하도록 튜닝)
+
+    [Header("배치 선택 (우선순위: layoutPath > caseName > Cases 폴더 첫 파일)")]
+    [Tooltip("케이스 파일명 (Assets/Data/Cases/ 안, 확장자 생략 가능). 예: case03_left_heavy_pipes")]
+    public string caseName = "";
+    [Tooltip("특정 파일을 직접 지정할 때만 사용 (정적 씬 저장본을 쓰려면 여기에 경로 입력)")]
+    public string layoutPath = "";
+
+    [Header("적재함 트레이")]
+    public bool buildTray = true;
+    public Material trayMaterial;
+
+    [Header("씬 인벤토리 (비우면 자동 검색)")]
+    [Tooltip("지정/발견되면 CargoFactory 대신 인벤토리 진열품을 복제해 적재 — 씬에서 바꾼 모양이 반영됨")]
+    public CargoInventory inventory;
+
+    public class LoadedCargo
+    {
+        public CargoType type;
+        public GameObject go;
+        public Rigidbody rb;
+        public bool secured;
+        public Vector3 initialLocal; // bedAnchor 기준 초기 위치(이동거리 측정용)
+    }
+
+    public IReadOnlyList<LoadedCargo> Loaded => loaded;
+    public string LastLoadedPath { get; private set; }
+    /// <summary>트레이 바닥 반폭(x)·반길이(z), 스케일 적용된 m. 이탈 판정용.</summary>
+    public Vector2 TrayHalfXZ { get; private set; } = new Vector2(3.2f, 1.2f);
+    private readonly List<LoadedCargo> loaded = new List<LoadedCargo>();
+    private Transform trayRoot;
+
+    // 트럭 원래 질량·무게중심 (적재 반영 후 복원용)
+    private bool truckCaptured;
+    private float origTruckMass;
+    private Vector3 origTruckCoM;
+
+    private static readonly Color[] Palette =
+    {
+        new Color(0.30f, 0.55f, 0.85f), new Color(0.90f, 0.55f, 0.25f),
+        new Color(0.35f, 0.72f, 0.45f), new Color(0.62f, 0.45f, 0.80f),
+        new Color(0.30f, 0.72f, 0.72f), new Color(0.85f, 0.40f, 0.45f),
+        new Color(0.85f, 0.75f, 0.35f),
+    };
+
+    public static string CasesDir => Path.Combine(Application.dataPath, "Data/Cases");
+
+    public string ResolvedPath
+    {
+        get
+        {
+            // 1) 직접 경로 지정이 최우선
+            if (!string.IsNullOrEmpty(layoutPath)) return layoutPath;
+
+            // 2) 케이스 이름 지정 → Assets/Data/Cases/<이름>.json
+            if (!string.IsNullOrEmpty(caseName))
+            {
+                string n = caseName.EndsWith(".json") ? caseName : caseName + ".json";
+                return Path.Combine(CasesDir, n);
+            }
+
+            // 3) 비워두면 Cases 폴더의 첫 파일(정렬순 = case01)
+            if (Directory.Exists(CasesDir))
+            {
+                string[] files = Directory.GetFiles(CasesDir, "*.json");
+                if (files.Length > 0)
+                {
+                    System.Array.Sort(files);
+                    return files[0];
+                }
+            }
+
+            // 4) 케이스가 하나도 없으면 정적 씬 저장본 폴백
+            return CargoLayoutFile.DefaultPath;
+        }
+    }
+
+    void Awake()
+    {
+        // 인스펙터에서 비워두면 정적 씬과 같은 실측 카탈로그 사용 → 이름 매칭 보장
+        if (cargoTypes == null || cargoTypes.Length == 0)
+            cargoTypes = CargoCatalog.CreateDefault();
+
+        if (inventory == null) inventory = FindObjectOfType<CargoInventory>();
+
+        // 자동 연결: 트럭 Rigidbody, 그리고 트럭 자식 중 이름이 "BedAnchor"인 Transform
+        if (truckBody == null)
+        {
+            var vc = FindObjectOfType<VehicleController>();
+            if (vc != null) truckBody = vc.GetComponent<Rigidbody>();
+        }
+        if (bedAnchor == null && truckBody != null)
+        {
+            foreach (Transform tr in truckBody.GetComponentsInChildren<Transform>())
+                if (tr.name == "BedAnchor") { bedAnchor = tr; break; }
+        }
+    }
+
+    /// <summary>저장 파일을 읽어 트럭에 적재. 성공 시 화물 수 반환, 실패 시 -1.</summary>
+    public int Load() => Load(ResolvedPath);
+
+    public int Load(string path)
+    {
+        if (bedAnchor == null) { Debug.LogError("bedAnchor 미지정"); return -1; }
+        if (!File.Exists(path)) { Debug.LogWarning($"저장 파일 없음: {path}"); return -1; }
+
+        CargoLayoutFile file = JsonUtility.FromJson<CargoLayoutFile>(File.ReadAllText(path));
+        if (file == null || file.cargo == null) { Debug.LogWarning("불러오기 실패: 파싱 오류"); return -1; }
+
+        LastLoadedPath = path;
+        Clear();
+        TrayHalfXZ = new Vector2(
+            (file.bed != null ? file.bed.widthX : 0.64f) * 0.5f * scale,
+            (file.bed != null ? file.bed.lengthZ : 0.24f) * 0.5f * scale);
+        if (buildTray) BuildTray(file.bed);
+
+        foreach (CargoLayoutEntry e in file.cargo)
+        {
+            CargoType t = FindType(e.type);
+            if (t == null) { Debug.LogWarning($"화물 종류 '{e.type}' 없음 — 건너뜀"); continue; }
+
+            // 인벤토리 진열품 복제 우선 (씬에서 커스텀한 모양 반영), 없으면 팩토리 생성
+            GameObject go = inventory != null ? inventory.CreateInstance(t.name, scale) : null;
+            if (go == null) go = CargoFactory.Create(t, scale, ColorFor(t));
+            go.transform.SetParent(bedAnchor, false); // 트럭(bedAnchor)의 자식으로 유지 → 리셋·이동을 항상 따라감
+            // 저장된 localEuler는 최종 회전(형상 기본회전 포함) → 직접 덮어씀
+            go.transform.localRotation = Quaternion.Euler(e.localEuler);
+            go.transform.localPosition = e.localPos * scale;
+            Vector3 initLocal = go.transform.localPosition;
+
+            var rb = go.AddComponent<Rigidbody>();
+            rb.mass = Mathf.Max(0.01f, t.massKg * massScale);
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+
+            if (e.secured && truckBody != null)
+            {
+                // 고정 화물: dynamic + FixedJoint로 트럭에 강체 결박.
+                // kinematic 자식으로 매달면 중첩 리지드바디가 되어 트럭이 안 움직임 → 반드시 부모연결 해제.
+                go.transform.SetParent(null, true);   // 월드로 독립 (중첩 방지)
+                rb.isKinematic = false;
+                rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+                var joint = go.AddComponent<FixedJoint>();
+                joint.connectedBody = truckBody;      // 트럭에 결박 → 같이 움직이며 하중 기여
+                joint.enableCollision = false;
+            }
+            else
+            {
+                // 자유 화물: 안정 배치를 위해 우선 kinematic-부모연결 → 출발 전 ReleaseFreeCargo()에서 물리 해제.
+                rb.isKinematic = true;
+            }
+
+            loaded.Add(new LoadedCargo
+            {
+                type = t, go = go, rb = rb, secured = e.secured, initialLocal = initLocal
+            });
+        }
+
+        IgnoreTruckBodyCollisions();
+        ApplyLoadToTruck();
+        Debug.Log($"트럭 적재 완료: {loaded.Count}개 (scale ×{scale}, massScale ×{massScale})\n적재 파일: {path}");
+        return loaded.Count;
+    }
+
+    /// <summary>
+    /// 화물이 트럭 "몸체" 콜라이더에 겹쳐 스폰돼 튕겨나가는 것 방지.
+    /// 트럭 몸체와는 충돌 무시, 트레이·바퀴 제외(트레이는 화물을 받쳐야 하므로).
+    /// </summary>
+    private void IgnoreTruckBodyCollisions()
+    {
+        if (truckBody == null) return;
+        Collider[] bodyCols = truckBody.GetComponentsInChildren<Collider>();
+        foreach (LoadedCargo c in loaded)
+        {
+            if (c.go == null) continue;
+            Collider cargoCol = c.go.GetComponent<Collider>();
+            if (cargoCol == null) continue;
+            foreach (Collider bc in bodyCols)
+            {
+                if (bc is WheelCollider) continue;
+                if (trayRoot != null && bc.transform.IsChildOf(trayRoot)) continue; // 트레이는 부딪혀야 함
+                Physics.IgnoreCollision(cargoCol, bc);
+            }
+        }
+    }
+
+    /// <summary>커브 시작 시 호출: 자유(미고정) 화물을 물리 해제 → 실제로 쏠리고 굴러감. 고정 화물은 그대로.</summary>
+    public void ReleaseFreeCargo()
+    {
+        int released = 0;
+        foreach (LoadedCargo c in loaded)
+        {
+            if (c.secured || c.go == null || c.rb == null) continue;
+            if (!c.rb.isKinematic) continue;
+            c.go.transform.SetParent(null, true);          // 월드로 (트럭 좌표에서 독립)
+            c.rb.isKinematic = false;
+            c.rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            if (truckBody != null)
+                c.rb.velocity = truckBody.GetPointVelocity(c.go.transform.position); // 매끄러운 인계 (2020.3: velocity)
+            released++;
+        }
+        ApplyLoadToTruck(); // 해제된 자유화물 제외하고 트럭 무게중심 재계산(중복 방지)
+        Debug.Log($"자유 화물 물리 해제: {released}개");
+    }
+
+    public void Clear()
+    {
+        // 트럭 질량·무게중심 원복 (다음 적재를 깨끗한 기준에서 다시 계산)
+        if (truckCaptured && truckBody != null)
+        {
+            truckBody.mass = origTruckMass;
+            truckBody.centerOfMass = origTruckCoM;
+        }
+        foreach (LoadedCargo c in loaded) if (c.go != null) Destroy(c.go);
+        loaded.Clear();
+        if (trayRoot != null) Destroy(trayRoot.gameObject);
+    }
+
+    /// <summary>적재 화물의 총 질량·무게중심을 트럭 Rigidbody에 반영 → 배치별로 전복 거동이 달라짐.</summary>
+    private void ApplyLoadToTruck()
+    {
+        if (truckBody == null) return;
+        if (!truckCaptured)
+        {
+            origTruckMass = truckBody.mass;
+            origTruckCoM = truckBody.centerOfMass;
+            truckCaptured = true;
+        }
+
+        float m = origTruckMass;
+        Vector3 weighted = origTruckMass * origTruckCoM; // 트럭 로컬 기준
+        foreach (LoadedCargo c in loaded)
+        {
+            if (c.go == null || c.type == null) continue;
+            if (c.rb != null && !c.rb.isKinematic) continue; // 이미 물리 해제된 자유화물은 실제 바디라 제외(중복 방지)
+            float cm = c.type.massKg * massScale;
+            Vector3 localToTruck = truckBody.transform.InverseTransformPoint(c.go.transform.position);
+            weighted += cm * localToTruck;
+            m += cm;
+        }
+        truckBody.mass = m;
+        truckBody.centerOfMass = weighted / m;
+        Debug.Log($"적재 반영: 트럭질량 {origTruckMass:F0}→{m:F0}kg (화물총 {m - origTruckMass:F0}kg), CoM(local)={truckBody.centerOfMass}");
+    }
+
+    private void BuildTray(CargoLayoutBed bed)
+    {
+        float w = (bed != null ? bed.widthX : 0.64f) * scale;
+        float l = (bed != null ? bed.lengthZ : 0.24f) * scale;
+        float wallH = (bed != null ? bed.wallHeight : 0.06f) * scale;
+        float floorT = 0.01f * scale;
+        float wallT = 0.01f * scale;
+
+        Material mat = trayMaterial != null ? trayMaterial : CargoFactory.MakeLit(new Color(0.22f, 0.24f, 0.28f));
+        trayRoot = new GameObject("CargoTray").transform;
+        trayRoot.SetParent(bedAnchor, false); // 트럭과 함께 움직임
+
+        MakeBox("Floor", new Vector3(0, floorT * 0.5f, 0), new Vector3(w, floorT, l), mat);
+        float wy = floorT + wallH * 0.5f;
+        float wx = w * 0.5f + wallT * 0.5f;
+        float wz = l * 0.5f + wallT * 0.5f;
+        MakeBox("WallL", new Vector3(-wx, wy, 0), new Vector3(wallT, wallH, l + 2 * wallT), mat);
+        MakeBox("WallR", new Vector3(wx, wy, 0), new Vector3(wallT, wallH, l + 2 * wallT), mat);
+        MakeBox("WallB", new Vector3(0, wy, -wz), new Vector3(w, wallH, wallT), mat);
+        MakeBox("WallF", new Vector3(0, wy, wz), new Vector3(w, wallH, wallT), mat);
+    }
+
+    private void MakeBox(string name, Vector3 localPos, Vector3 scaleV, Material mat)
+    {
+        GameObject b = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        b.name = name;
+        b.transform.SetParent(trayRoot, false);
+        b.transform.localPosition = localPos;
+        b.transform.localScale = scaleV;
+        b.GetComponent<MeshRenderer>().sharedMaterial = mat;
+    }
+
+    // Edit 모드: 트레이 윤곽선 미리보기 / Play 중: 트럭 실제 무게중심(CoM) 마젠타 구슬
+    void OnDrawGizmos()
+    {
+        if (bedAnchor != null)
+        {
+            float w = 0.64f * scale, l = 0.24f * scale, h = 0.06f * scale;
+            Gizmos.matrix = Matrix4x4.TRS(bedAnchor.position, bedAnchor.rotation, Vector3.one);
+            Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.9f);
+            Gizmos.DrawWireCube(new Vector3(0f, h * 0.5f, 0f), new Vector3(w, h, l)); // 트레이 부피
+            Gizmos.color = new Color(1f, 0.9f, 0.2f, 0.9f);
+            Gizmos.DrawWireCube(Vector3.zero, new Vector3(w, 0.001f, l));             // 바닥면
+        }
+        if (Application.isPlaying && truckBody != null)
+        {
+            Gizmos.matrix = Matrix4x4.identity;
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawSphere(truckBody.worldCenterOfMass, 0.15f); // 적재 반영된 트럭 무게중심
+        }
+    }
+
+    private CargoType FindType(string name)
+    {
+        if (cargoTypes == null) return null;
+        foreach (CargoType t in cargoTypes) if (t != null && t.name == name) return t;
+        return null;
+    }
+
+    private Color ColorFor(CargoType t)
+    {
+        if (t != null && t.material != null) return t.material.color;
+        int i = cargoTypes != null ? System.Array.IndexOf(cargoTypes, t) : -1;
+        if (i < 0) i = 0;
+        return Palette[i % Palette.Length];
+    }
+}

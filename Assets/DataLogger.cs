@@ -11,11 +11,14 @@ public class DataLogger : MonoBehaviour
 
     [Header("References")]
     public VehicleController vehicle;
+    [Tooltip("파일명에 붙일 화물 정보 소스 (비우면 자동 검색, 없어도 동작)")]
+    public CargoBedLoader cargoLoader;
 
     private Rigidbody rb;
     private StreamWriter writer;
 
     private float timer;
+    private bool recording;              // BeginRun~EndRun 사이에만 true (케이스 주행 구간)
     private Vector3 lastVelocity;
     private Vector3 lastEuler;
     private Vector3 lastAngularVelocity;
@@ -31,7 +34,32 @@ public class DataLogger : MonoBehaviour
         lastEuler = transform.eulerAngles;
         lastAngularVelocity = rb.angularVelocity;
 
-        string path = Path.Combine(Application.persistentDataPath, fileName);
+        if (cargoLoader == null)
+            cargoLoader = FindObjectOfType<CargoBedLoader>();
+        // 파일 생성은 첫 샘플 시점으로 미룸 — 화물 적재(첫 프레임 이후)가 끝난 뒤
+        // 파일명에 배치 정보를 넣기 위해서. 타임스탬프 덕에 run마다 새 파일(덮어쓰기 없음).
+    }
+
+    private void EnsureWriter()
+    {
+        if (writer != null) return;
+
+        string baseName = Path.GetFileNameWithoutExtension(fileName);
+        string stamp = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+        string cargoTag = "";
+        if (cargoLoader != null && cargoLoader.Loaded.Count > 0)
+        {
+            string layout = string.IsNullOrEmpty(cargoLoader.LastLoadedPath)
+                ? "layout"
+                : Path.GetFileNameWithoutExtension(cargoLoader.LastLoadedPath);
+            float mass = 0f;
+            foreach (var c in cargoLoader.Loaded)
+                mass += c.type.massKg * cargoLoader.massScale;
+            cargoTag = $"_{layout}_n{cargoLoader.Loaded.Count}_{mass:F0}kg";
+        }
+
+        string path = Path.Combine(Application.persistentDataPath, $"{baseName}_{stamp}{cargoTag}.csv");
 
         writer = new StreamWriter(path, false);
 
@@ -58,13 +86,14 @@ public class DataLogger : MonoBehaviour
 
     void Update()
     {
-        timer += Time.deltaTime;
+        if (!recording) return;          // BeginRun 전 / EndRun 후엔 기록 안 함 (안정화·리셋 구간 제외)
 
+        timer += Time.deltaTime;
         if (timer < interval)
             return;
 
         timer = 0f;
-        LogData();
+        LogData();                        // 파일은 BeginRun()에서 이미 열림
     }
 
     void LogData()
@@ -196,6 +225,44 @@ public class DataLogger : MonoBehaviour
             angle -= 360f;
 
         return angle;
+    }
+
+    /// <summary>케이스 주행 시작: 새 파일을 열고 샘플링 시작.
+    /// 적재(Load) 후에 호출해야 파일명에 화물정보가 정확히 들어감.
+    /// 케이스 1개 = 파일 1개 = 그 주행 데이터 전부(안정화·리셋 구간 제외).</summary>
+    public void BeginRun()
+    {
+        CloseWriter();                    // 혹시 열려 있던 파일 정리
+        EnsureWriter();                   // 새 파일 생성 (화물 태그 포함)
+        // 리셋 텔레포트 여파가 첫 샘플 미분값(가속도 등)에 튀지 않게 초기화
+        if (rb != null)
+        {
+            lastVelocity = rb.velocity;
+            lastAngularVelocity = rb.angularVelocity;
+        }
+        lastEuler = transform.eulerAngles;
+        timer = 0f;
+        recording = true;
+    }
+
+    /// <summary>케이스 주행 종료: 파일을 닫고 샘플링 정지.</summary>
+    public void EndRun()
+    {
+        recording = false;
+        CloseWriter();
+    }
+
+    /// <summary>배치 일괄 실행용(하위호환): 현재 파일을 닫는다. BeginRun/EndRun 사용 시 불필요.</summary>
+    public void StartNewFile() => CloseWriter();
+
+    private void CloseWriter()
+    {
+        if (writer != null)
+        {
+            writer.Flush();
+            writer.Close();
+            writer = null;
+        }
     }
 
     void OnApplicationQuit()

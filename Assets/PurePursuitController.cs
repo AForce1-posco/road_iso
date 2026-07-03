@@ -39,6 +39,19 @@ public class PurePursuitController : MonoBehaviour
     private bool usingISO = false;
     private bool finished = false;
 
+    /// <summary>ISO 구간 종료 후 정지 완료 여부 (기록 종료 신호).</summary>
+    public bool Finished => finished;
+    /// <summary>ISO 경로 주행 중인지 (위험 구간 = 기록 핵심 구간).</summary>
+    public bool UsingISO => usingISO;
+
+    /// <summary>배치 일괄 실행용: 다음 케이스 주행 전에 경로 추종 상태 초기화.</summary>
+    public void Restart()
+    {
+        nearestIndex = 0;
+        usingISO = false;
+        finished = false;
+    }
+
     void Start()
     {
         vehicle = GetComponent<VehicleController>();
