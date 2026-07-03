@@ -147,10 +147,14 @@ public class DynamicSceneController : MonoBehaviour
 
         for (int i = 0; i < total; i++)
         {
+            string caseLabel = "(단일)";
             if (runAllCases && cases.Count > 0)
+            {
                 loader.layoutPath = cases[i]; // 명시 지정 (caseName보다 우선)
+                caseLabel = Path.GetFileNameWithoutExtension(cases[i]);
+            }
 
-            Debug.Log($"═══════ 케이스 {i + 1} / {total} ═══════");
+            Debug.Log($"═══════ [{i + 1}/{total}] {caseLabel} ═══════"); // 순번/총개수 + 실제 케이스 이름
             yield return RunOneCase();
 
             if (i < total - 1)
@@ -162,6 +166,16 @@ public class DynamicSceneController : MonoBehaviour
 #if UNITY_EDITOR
         if (quitPlayOnFinish) UnityEditor.EditorApplication.isPlaying = false;
 #endif
+    }
+
+    /// <summary>파일 경로에서 케이스 번호를 뽑는다. "case1001.json" → 1001, 없으면 -1.</summary>
+    private static int ExtractCaseNumber(string path)
+    {
+        string name = Path.GetFileNameWithoutExtension(path);
+        int i = 0; while (i < name.Length && !char.IsDigit(name[i])) i++;
+        int j = i; while (j < name.Length && char.IsDigit(name[j])) j++;
+        if (j > i && int.TryParse(name.Substring(i, j - i), out int n)) return n;
+        return -1;
     }
 
     private IEnumerator RunOneCase()
