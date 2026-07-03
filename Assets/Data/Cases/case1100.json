@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "bed": {
+    "widthX": 0.64,
+    "lengthZ": 0.24,
+    "wallHeight": 0.06
+  },
+  "cargo": [
+    {
+      "type": "박스 B-004",
+      "localPos": {
+        "x": -0.235,
+        "y": 0.03,
+        "z": -0.065
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-002",
+      "localPos": {
+        "x": -0.0875,
+        "y": 0.0225,
+        "z": -0.075
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    }
+  ]
+}

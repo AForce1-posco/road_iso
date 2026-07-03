@@ -23,8 +23,14 @@ public class DynamicSceneController : MonoBehaviour
     public DataLogger dataLogger;
 
     [Header("실행 모드")]
-    [Tooltip("true: Cases 폴더 전체를 이름순으로 일괄 주행 / false: 1개만(loader 설정 따름)")]
+    [Tooltip("true: Cases 폴더 전체를 번호순으로 일괄 주행 / false: 1개만(loader 설정 따름)")]
     public bool runAllCases = true;
+
+    [Header("케이스 범위 (중단 후 원하는 지점부터 재개용)")]
+    [Tooltip("이 번호 '이상'의 케이스만 주행 (caseNNN.json의 NNN). 0이면 처음부터. 예: 1001 → 자유배치부터")]
+    public int startCaseNumber = 0;
+    [Tooltip("이 번호 '이하'의 케이스만 주행. 0이면 끝까지. 예: start 1001 + end 2000 → 자유배치만")]
+    public int endCaseNumber = 0;
 
     [Header("타이밍")]
     [Tooltip("적재 후 자유화물 해제 전 안정화 시간 (s)")]
@@ -104,15 +110,34 @@ public class DynamicSceneController : MonoBehaviour
         // 트럭은 씬에 이미 존재하던 바디라 전역 기본값 변경이 소급 안 됨 → 직접 적용
         if (maxDepenetrationVelocity > 0f) truckRb.maxDepenetrationVelocity = maxDepenetrationVelocity;
 
-        // 케이스 목록 (이름순 = case01 → case10. Ordinal 정렬이라 순서 보장)
+        // 케이스 목록 — 파일명의 번호(caseNNN)로 정렬 (3자리/4자리 섞여도 진짜 숫자순 보장)
         var cases = new List<string>();
         if (runAllCases && Directory.Exists(CargoPaths.CasesDir))
         {
             cases.AddRange(Directory.GetFiles(CargoPaths.CasesDir, "*.json"));
-            cases.Sort(System.StringComparer.Ordinal);
+            cases.Sort((a, b) =>
+            {
+                int na = ExtractCaseNumber(a), nb = ExtractCaseNumber(b);
+                if (na >= 0 && nb >= 0) return na.CompareTo(nb);
+                return System.StringComparer.Ordinal.Compare(a, b);
+            });
+
+            // 번호 범위 필터 (중단 후 재개용). 0이면 무제한.
+            if (startCaseNumber > 0 || endCaseNumber > 0)
+            {
+                cases = cases.FindAll(path =>
+                {
+                    int num = ExtractCaseNumber(path);
+                    if (num < 0) return false; // 번호 없는 파일은 범위 지정 시 제외
+                    if (startCaseNumber > 0 && num < startCaseNumber) return false;
+                    if (endCaseNumber > 0 && num > endCaseNumber) return false;
+                    return true;
+                });
+                Debug.Log($"케이스 범위 필터 {startCaseNumber}~{endCaseNumber} → {cases.Count}개 선택");
+            }
         }
         if (runAllCases && cases.Count == 0)
-            Debug.LogWarning("Cases 폴더에 케이스가 없음 — loader 설정대로 1회만 주행");
+            Debug.LogWarning("Cases 폴더에 (범위 내) 케이스가 없음 — loader 설정대로 1회만 주행");
 
         int total = (runAllCases && cases.Count > 0) ? cases.Count : 1;
 

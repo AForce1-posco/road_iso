@@ -18,6 +18,8 @@ public class DataLogger : MonoBehaviour
     [Header("Logging")]
     public float interval = 0.1f;
     public string fileName = "vehicle_dynamics_v3.csv";
+    [Tooltip("모든 Play가 이 한 파일에 계속 append됨 (Assets/Data/Results). 각 행의 RunID로 실행 구분, LayoutID로 케이스 구분")]
+    public string combinedFileName = "combined_timeseries_all.csv";
     public bool logToConsole = false;
     public int flushEveryRows = 50;
 
@@ -107,12 +109,14 @@ public class DataLogger : MonoBehaviour
     {
         if (!string.IsNullOrEmpty(runId)) runID = runId;
         CargoPaths.EnsureAll();
-        string path = Path.Combine(CargoPaths.ResultsDir, $"combined_timeseries_{runID}.csv");
+        // 고정 파일명 + append → 모든 실행이 한 파일에 누적. RunID 컬럼으로 실행 구분.
+        string path = Path.Combine(CargoPaths.ResultsDir, combinedFileName);
         try
         {
-            combinedWriter = new StreamWriter(path, false);
-            combinedWriter.WriteLine(HEADER);
-            Debug.Log("통합 시계열 CSV 저장 시작: " + path);
+            bool isNew = !File.Exists(path) || new FileInfo(path).Length == 0;
+            combinedWriter = new StreamWriter(path, true);       // append 모드
+            if (isNew) combinedWriter.WriteLine(HEADER);          // 새 파일일 때만 헤더 1줄
+            Debug.Log($"통합 시계열 CSV {(isNew ? "생성" : "이어쓰기")}: {path}  (RunID={runID})");
         }
         catch (Exception e)
         {

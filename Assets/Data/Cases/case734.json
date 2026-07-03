@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "bed": {
+    "widthX": 0.64,
+    "lengthZ": 0.24,
+    "wallHeight": 0.06
+  },
+  "cargo": [
+    {
+      "type": "박스 B-002",
+      "localPos": {
+        "x": -0.2475,
+        "y": 0.0225,
+        "z": -0.075
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "납벨트 W-001",
+      "localPos": {
+        "x": -0.131,
+        "y": 0.015,
+        "z": -0.0775
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-007",
+      "localPos": {
+        "x": -0.19,
+        "y": 0.0325,
+        "z": 0.0415
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    }
+  ]
+}

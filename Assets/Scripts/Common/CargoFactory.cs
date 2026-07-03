@@ -20,12 +20,22 @@ public static class CargoFactory
                 go.transform.localScale = new Vector3(s.x, s.y * 0.5f, s.z);
                 ReplaceWithConvexMeshCollider(go);
                 break;
-            case CargoShape.Pipe: // 길이(Z)로 누운 원통: X축 90° 회전 → 로컬 Y가 월드 Z
-                go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                go.transform.localScale = new Vector3(s.x, s.z * 0.5f, s.y);
-                go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-                ReplaceWithConvexMeshCollider(go);
+            case CargoShape.Pipe: // 누운 원통. 이름의 (N)이 2 이상이면 N개 다발로 비주얼 구성.
+            {
+                int bundle = ParseBundleCount(type.name);
+                if (bundle >= 2)
+                {
+                    go = CreatePipeBundle(s, bundle); // 비주얼=N다발, 콜라이더=convex 헐 1개(물리 한 덩어리)
+                }
+                else
+                {
+                    go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    go.transform.localScale = new Vector3(s.x, s.z * 0.5f, s.y);
+                    go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                    ReplaceWithConvexMeshCollider(go);
+                }
                 break;
+            }
             case CargoShape.Coil: // 중공 도넛(축=세로). 구멍은 시각 표현, 콜라이더는 convex(막힘)
                 go = CreateCoil(type, scale);
                 break;
@@ -40,7 +50,8 @@ public static class CargoFactory
         go.name = $"Cargo_{type.name}";
 
         var mr = go.GetComponent<MeshRenderer>();
-        Material src = type.material != null ? type.material : MakeLit(fallbackColor);
+        // type.material이 지정돼 있으면 그걸 우선(텍스처 머티리얼 꽂으면 실사). 없으면 종류별 실물 재질.
+        Material src = type.material != null ? type.material : MakeRealistic(type);
         Material inst = new Material(src); // 인스턴스 (개별 틴트용)
         if (Application.isPlaying) mr.material = inst;
         else mr.sharedMaterial = inst; // 에디트 모드(인벤토리 진열)에서는 sharedMaterial만 허용
@@ -71,6 +82,91 @@ public static class CargoFactory
         SafeDestroy(go.GetComponent<Collider>());
         var bc = go.AddComponent<BoxCollider>();
         bc.size = new Vector3(1f, 2f, 1f); // 로컬 메시 바운드에 맞춤 → 월드에서 sizeM
+        return go;
+    }
+
+    /// <summary>이름 끝의 "(N)"에서 번들 개수를 읽는다. 없거나 파싱 실패 시 1.</summary>
+    private static int ParseBundleCount(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return 1;
+        int open = name.LastIndexOf('(');
+        int close = name.LastIndexOf(')');
+        if (open >= 0 && close > open)
+        {
+            string inner = name.Substring(open + 1, close - open - 1).Trim();
+            if (int.TryParse(inner, out int n) && n >= 1) return n;
+        }
+        return 1;
+    }
+
+    /// <summary>
+    /// 파이프 번들: 이름의 (N)만큼 얇은 파이프를 다발로 "보이게" 그린다.
+    /// 방향 규칙은 단일 파이프와 동일(길이=로컬 Y, 단면=X·Z) → 저장된 회전값 그대로 호환.
+    /// 콜라이더는 다발 전체를 감싸는 convex 헐 1개 = 물리는 한 덩어리(요청대로).
+    /// </summary>
+    private static GameObject CreatePipeBundle(Vector3 s, int bundle)
+    {
+        float length = s.z;                                     // 길이(로컬 Y로 눕힘)
+        float R = Mathf.Max(0.0005f, Mathf.Min(s.x, s.y) * 0.5f); // 다발 외곽 반지름
+
+        // 서브파이프 중심(단면 X·Z 평면)과 반지름 r — 원 안 원 패킹 근사
+        var offsets = new List<Vector2>();
+        float r;
+        if (bundle <= 1) { r = R; offsets.Add(Vector2.zero); }
+        else if (bundle == 2)
+        {
+            r = R * 0.5f;
+            offsets.Add(new Vector2(-r, 0f));
+            offsets.Add(new Vector2(r, 0f));
+        }
+        else if (bundle == 3)
+        {
+            r = R * 0.464f; float d = R - r;                    // 정삼각 배치
+            for (int i = 0; i < 3; i++)
+            {
+                float a = (90f + i * 120f) * Mathf.Deg2Rad;
+                offsets.Add(new Vector2(Mathf.Cos(a) * d, Mathf.Sin(a) * d));
+            }
+        }
+        else                                                   // 4개 이상: 한 줄
+        {
+            r = R / bundle;
+            for (int i = 0; i < bundle; i++)
+                offsets.Add(new Vector2(-R + r + 2f * r * i, 0f));
+        }
+
+        // 임시 실린더 메시를 서브파이프마다 배치해 하나의 메시로 결합 (실린더 기본 축=Y)
+        var tmp = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        Mesh cyl = tmp.GetComponent<MeshFilter>().sharedMesh;
+        var combines = new List<CombineInstance>();
+        Vector3 scl = new Vector3(2f * r, length * 0.5f, 2f * r); // 길이는 Y(실린더 높이 2)
+        foreach (Vector2 o in offsets)
+        {
+            combines.Add(new CombineInstance
+            {
+                mesh = cyl,
+                transform = Matrix4x4.TRS(new Vector3(o.x, 0f, o.y), Quaternion.identity, scl)
+            });
+        }
+        SafeDestroy(tmp);
+
+        var mesh = new Mesh { name = "PipeBundle" };
+        mesh.CombineMeshes(combines.ToArray(), true, true);
+        mesh.RecalculateBounds();
+
+        var go = new GameObject("PipeBundle");
+        go.AddComponent<MeshFilter>().sharedMesh = mesh;
+        go.AddComponent<MeshRenderer>();
+
+        var mc = go.AddComponent<MeshCollider>();
+        mc.sharedMesh = mesh;
+        mc.convex = true;                                      // 다발 전체 = convex 헐 1덩어리
+
+        // 단일 파이프와 동일한 기본회전 → 길이가 눕고(로컬 Y→Z), 저장 회전값 호환
+        go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+        if (mesh.vertexCount == 0)
+            Debug.LogWarning($"[CargoFactory] 파이프 번들 메시 비어있음 (bundle={bundle}) — CombineMeshes 실패 의심");
         return go;
     }
 
@@ -172,5 +268,67 @@ public static class CargoFactory
         Shader sh = Shader.Find("Universal Render Pipeline/Lit");
         if (sh == null) sh = Shader.Find("Standard");
         return new Material(sh) { color = color };
+    }
+
+    /// <summary>
+    /// 화물 종류별 실물 재질(색·금속감·광택). 텍스처 없이 PBR 파라미터만으로 "장난감→실물" 근사.
+    /// 골판지=갈색 무광, 톤백=베이지 천, 코일=브러시 스틸, 흰파이프=PVC 광택, 스틸파이프=아연도금,
+    /// 납벨트=짙은 금속, 드럼=파란 강철드럼.
+    /// </summary>
+    public static Material MakeRealistic(CargoType type)
+    {
+        string name = type != null ? (type.name ?? "") : "";
+        string id = type != null ? (type.id ?? "") : "";
+        CargoShape shape = type != null ? type.shape : CargoShape.Box;
+
+        Color color; float metallic, smoothness;
+        switch (shape)
+        {
+            case CargoShape.Coil: // 강철 코일 — 브러시드 스틸
+                color = new Color(0.76f, 0.77f, 0.79f); metallic = 0.9f; smoothness = 0.5f; break;
+            case CargoShape.Sack: // 톤백 — 짜임 천(베이지), 완전 무광
+                color = new Color(0.86f, 0.82f, 0.72f); metallic = 0f; smoothness = 0.05f; break;
+            case CargoShape.Drum: // 드럼통 — 파란 강철
+                color = new Color(0.20f, 0.35f, 0.60f); metallic = 0.6f; smoothness = 0.45f; break;
+            case CargoShape.Pipe:
+                if (name.Contains("흰")) // 흰 PVC 파이프 — 플라스틱 광택
+                { color = new Color(0.92f, 0.92f, 0.90f); metallic = 0f; smoothness = 0.6f; }
+                else // 스틸/배관 파이프 — 아연도금 회색
+                { color = new Color(0.70f, 0.72f, 0.74f); metallic = 0.85f; smoothness = 0.45f; }
+                break;
+            default: // Box
+                if (name.Contains("납") || id.StartsWith("W")) // 납벨트 — 짙은 금속
+                { color = new Color(0.28f, 0.29f, 0.31f); metallic = 0.7f; smoothness = 0.3f; }
+                else // 골판지 박스 — 갈색 무광 (종류별 미세 색차로 단조로움 방지)
+                {
+                    float v = ((id.GetHashCode() & 0xff) / 255f - 0.5f) * 0.10f;
+                    color = new Color(0.62f + v, 0.47f + v * 0.8f, 0.31f + v * 0.5f);
+                    metallic = 0f; smoothness = 0.12f;
+                }
+                break;
+        }
+        return MakePBR(color, metallic, smoothness);
+    }
+
+    /// <summary>색+금속감+광택 PBR 머티리얼. URP Lit / Standard 양쪽 프로퍼티명 대응.</summary>
+    public static Material MakePBR(Color color, float metallic, float smoothness)
+    {
+        Shader sh = Shader.Find("Universal Render Pipeline/Lit");
+        bool urp = sh != null;
+        if (!urp) sh = Shader.Find("Standard");
+        var m = new Material(sh) { color = color };
+        if (urp)
+        {
+            m.SetColor("_BaseColor", color);
+            m.SetFloat("_Metallic", metallic);
+            m.SetFloat("_Smoothness", smoothness);
+        }
+        else // Standard (Built-in)
+        {
+            m.SetColor("_Color", color);
+            m.SetFloat("_Metallic", metallic);
+            m.SetFloat("_Glossiness", smoothness);
+        }
+        return m;
     }
 }

@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "bed": {
+    "widthX": 0.64,
+    "lengthZ": 0.24,
+    "wallHeight": 0.06
+  },
+  "cargo": [
+    {
+      "type": "박스 B-004",
+      "localPos": {
+        "x": -0.235,
+        "y": 0.03,
+        "z": 0.055
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.111,
+        "y": 0.0325,
+        "z": 0.025
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "납벨트 W-001",
+      "localPos": {
+        "x": -0.022,
+        "y": 0.015,
+        "z": 0.0425
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "코일 C-001",
+      "localPos": {
+        "x": 0.077,
+        "y": 0.02,
+        "z": 0.055
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": 0.171,
+        "y": 0.0325,
+        "z": 0.025
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    }
+  ]
+}

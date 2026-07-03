@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "bed": {
+    "widthX": 0.64,
+    "lengthZ": 0.24,
+    "wallHeight": 0.06
+  },
+  "cargo": [
+    {
+      "type": "배관 파이프 S-001",
+      "localPos": {
+        "x": -0.1175,
+        "y": 0.03,
+        "z": -0.095
+      },
+      "localEuler": {
+        "x": 90.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-007",
+      "localPos": {
+        "x": -0.19,
+        "y": 0.0325,
+        "z": 0.0015
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-006",
+      "localPos": {
+        "x": 0.024,
+        "y": 0.0425,
+        "z": -0.0235
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "톤백 T-001",
+      "localPos": {
+        "x": 0.148,
+        "y": 0.06,
+        "z": -0.036
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    },
+    {
+      "type": "박스 B-004",
+      "localPos": {
+        "x": -0.19,
+        "y": 0.075,
+        "z": 0.0015
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": false
+    }
+  ]
+}

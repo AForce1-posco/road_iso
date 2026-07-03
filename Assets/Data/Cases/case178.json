@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "bed": {
+    "widthX": 0.64,
+    "lengthZ": 0.24,
+    "wallHeight": 0.06
+  },
+  "cargo": [
+    {
+      "type": "박스 B-002",
+      "localPos": {
+        "x": -0.2475,
+        "y": 0.0225,
+        "z": -0.075
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "납벨트 W-001",
+      "localPos": {
+        "x": -0.131,
+        "y": 0.015,
+        "z": -0.0775
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "납벨트 W-001",
+      "localPos": {
+        "x": -0.037,
+        "y": 0.015,
+        "z": -0.0775
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "납벨트 W-001",
+      "localPos": {
+        "x": 0.057,
+        "y": 0.015,
+        "z": -0.0775
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-004",
+      "localPos": {
+        "x": 0.186,
+        "y": 0.03,
+        "z": -0.065
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-004",
+      "localPos": {
+        "x": -0.235,
+        "y": 0.03,
+        "z": 0.039
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "납벨트 W-001",
+      "localPos": {
+        "x": -0.106,
+        "y": 0.015,
+        "z": 0.0265
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-003",
+      "localPos": {
+        "x": 0.0205,
+        "y": 0.03,
+        "z": 0.014
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    }
+  ]
+}

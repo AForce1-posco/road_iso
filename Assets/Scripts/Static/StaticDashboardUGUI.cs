@@ -203,7 +203,9 @@ public class StaticDashboardUGUI : MonoBehaviour
         lineRisk.color = RiskColor(risk.Level);
 
         float cx = cog.x - placer.transform.position.x, cz = cog.z - placer.transform.position.z, cy = total > 0 ? cog.y - placer.BedTopY : 0f;
-        lineCoG.text = $"CoG  좌우 {cx:0.00}  전후 {cz:0.00}  높이 {cy:0.00} m";
+        // X=좌우, Y=높이, Z=전후 (트레이 로컬, m). cm도 병기.
+        lineCoG.text = $"CoG  X {cx:0.000}  Y {cy:0.000}  Z {cz:0.000} m   " +
+                       $"({cx * 100f:0.0}, {cy * 100f:0.0}, {cz * 100f:0.0} cm)";
         lineLtr.text = $"축하중  전 {FormatMass(load.Front)}   후 {FormatMass(load.Rear)}";
         lineWheel.text = $"4륜  FL {FormatMass(load.FL)}  FR {FormatMass(load.FR)}  RL {FormatMass(load.RL)}  RR {FormatMass(load.RR)}";
 
