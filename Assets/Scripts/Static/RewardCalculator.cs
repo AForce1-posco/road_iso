@@ -67,8 +67,8 @@ public class RewardCalculator
         return Clamp01(cfg.leVolW * volUtil + cfg.leCompactW * compact + cfg.leContactW * contact);
     }
 
-    // 화물 총부피 / 적재함 부피
-    float VolumeUtilization(IReadOnlyList<RuleChecker.PlacedItem> placed)
+    // 화물 총부피 / 적재함 부피 (public: 분석/로깅에서 원값(용적률) 그대로 필요)
+    public float VolumeUtilization(IReadOnlyList<RuleChecker.PlacedItem> placed)
     {
         float v = 0f;
         foreach (var p in placed) v += 8f * p.halfSize.x * p.halfSize.y * p.halfSize.z;
