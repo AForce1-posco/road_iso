@@ -1,0 +1,46 @@
+# ============================================================================
+# 정적 배치 RL 학습 설정 (S4) — road_iso / PlacementAgent
+# ----------------------------------------------------------------------------
+# 실행: conda activate mlagents-x86
+#       mlagents-learn Docs/rl_config.yaml --run-id=placement_v1
+#       → "Start training..." 뜨면 Unity에서 RLTraining 씬 Play
+#       (Behavior Type 을 Heuristic Only → Default 로 바꿔야 트레이너와 연결됨)
+#
+# 스펙: 관측 114 (높이맵96 + CoG3 + 질량1 + 편차2 + 종류12)
+#       이산행동 3브랜치 (종류12 · 셀96 · 회전2)
+#       에피소드 = 화물 3~5개 배치 (커리큘럼 1단계, 짧음)
+#
+# 알고리즘 교체: trainer_type 을 ppo → sac 로 바꾸면 SAC 실험 (환경 재작업 불필요).
+#              마스킹은 ml-agents PPO/SAC 가 네이티브 지원(= Maskable PPO 기본 탑재).
+# ============================================================================
+behaviors:
+  PlacementAgent:                   # ← Behavior Parameters 의 Behavior Name 과 반드시 일치
+    trainer_type: ppo
+
+    hyperparameters:
+      batch_size: 128               # 이산행동 → 작게
+      buffer_size: 2048             # batch_size 의 배수 (2048 / 128 = 16)
+      learning_rate: 3.0e-4
+      learning_rate_schedule: linear
+      beta: 5.0e-3                  # 엔트로피 계수 = 탐색량. 이산 다브랜치라 중요
+      epsilon: 0.2                  # PPO clip
+      lambd: 0.95                   # GAE lambda
+      num_epoch: 3
+
+    network_settings:
+      hidden_units: 256             # 관측 114 → 256
+      num_layers: 2
+      normalize: true               # 관측 스케일 제각각(높이맵/질량/개수) → 정규화 ON
+      vis_encode_type: simple
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+
+    max_steps: 500000               # 1단계 기준선. 곡선 보며 늘림
+    time_horizon: 64                # 에피소드가 짧아 작게
+    summary_freq: 10000             # TensorBoard 기록 주기
+    keep_checkpoints: 5
+    checkpoint_interval: 50000
+    threaded: true
