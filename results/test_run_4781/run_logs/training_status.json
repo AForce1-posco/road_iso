@@ -1,0 +1,65 @@
+{
+    "PlacementAgent": {
+        "checkpoints": [
+            {
+                "steps": 349999,
+                "file_path": "results\\test_run_4781\\PlacementAgent\\PlacementAgent-349999.onnx",
+                "reward": 0.06598150193867079,
+                "creation_time": 1783249380.286535,
+                "auxillary_file_paths": [
+                    "results\\test_run_4781\\PlacementAgent\\PlacementAgent-349999.pt"
+                ]
+            },
+            {
+                "steps": 399996,
+                "file_path": "results\\test_run_4781\\PlacementAgent\\PlacementAgent-399996.onnx",
+                "reward": -0.019535575062036514,
+                "creation_time": 1783249882.0857134,
+                "auxillary_file_paths": [
+                    "results\\test_run_4781\\PlacementAgent\\PlacementAgent-399996.pt"
+                ]
+            },
+            {
+                "steps": 449998,
+                "file_path": "results\\test_run_4781\\PlacementAgent\\PlacementAgent-449998.onnx",
+                "reward": 0.07133922380123413,
+                "creation_time": 1783250368.6058087,
+                "auxillary_file_paths": [
+                    "results\\test_run_4781\\PlacementAgent\\PlacementAgent-449998.pt"
+                ]
+            },
+            {
+                "steps": 499995,
+                "file_path": "results\\test_run_4781\\PlacementAgent\\PlacementAgent-499995.onnx",
+                "reward": 0.14805675492184986,
+                "creation_time": 1783250892.770304,
+                "auxillary_file_paths": [
+                    "results\\test_run_4781\\PlacementAgent\\PlacementAgent-499995.pt"
+                ]
+            },
+            {
+                "steps": 500003,
+                "file_path": "results\\test_run_4781\\PlacementAgent\\PlacementAgent-500003.onnx",
+                "reward": 0.1483515127790424,
+                "creation_time": 1783250892.979003,
+                "auxillary_file_paths": [
+                    "results\\test_run_4781\\PlacementAgent\\PlacementAgent-500003.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 500003,
+            "file_path": "results\\test_run_4781\\PlacementAgent.onnx",
+            "reward": 0.1483515127790424,
+            "creation_time": 1783250892.979003,
+            "auxillary_file_paths": [
+                "results\\test_run_4781\\PlacementAgent\\PlacementAgent-500003.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "0.28.0",
+        "torch_version": "1.8.1+cpu"
+    }
+}
