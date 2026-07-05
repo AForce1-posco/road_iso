@@ -1,0 +1,29 @@
+{
+    "PlacementAgent": {
+        "checkpoints": [
+            {
+                "steps": 2314,
+                "file_path": "results/test_run_5789/PlacementAgent/PlacementAgent-2314.onnx",
+                "reward": -2.0501512270985227,
+                "creation_time": 1783255796.4239202,
+                "auxillary_file_paths": [
+                    "results/test_run_5789/PlacementAgent/PlacementAgent-2314.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 2314,
+            "file_path": "results/test_run_5789/PlacementAgent.onnx",
+            "reward": -2.0501512270985227,
+            "creation_time": 1783255796.4239202,
+            "auxillary_file_paths": [
+                "results/test_run_5789/PlacementAgent/PlacementAgent-2314.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "0.28.0",
+        "torch_version": "1.8.1+cpu"
+    }
+}
