@@ -2,7 +2,7 @@
   "version": 1,
   "bed": {
     "widthX": 0.21,
-    "lengthZ": 0.62,
+    "lengthZ": 0.61,
     "wallHeight": 0.06
   },
   "cargo": [

@@ -7,7 +7,7 @@ using UnityEngine;
 /// 측정치(지지율·축하중·CoG편차 등)는 Evaluate()로 노출 → S2 보상에서 사용.
 ///
 /// 좌표계 (Unity 트레이 로컬, m, 원점=트레이 중심):
-///   x = 좌우(lateral, 21cm)   y = 높이(27cm 적층한도)   z = 주행/길이(62cm)
+///   x = 좌우(lateral, 21cm)   y = 높이(27cm 적층한도)   z = 주행/길이(61cm)
 ///   ※ 설계문서 x(주행) = Unity z, 설계문서 y(좌우) = Unity x, 설계문서 z(높이) = Unity y.
 ///   바닥 top y = floorTopY. 화물 AABB는 회전(0/90) 반영된 축정렬 halfSize로 표현.
 /// </summary>
@@ -208,9 +208,9 @@ public class RuleChecker
 [System.Serializable]
 public class RuleConfig
 {
-    [Header("적재함 (Unity 로컬 m) — 안쪽 62×21×27")]
+    [Header("적재함 (Unity 로컬 m) — 안쪽 61×21×27")]
     public float trayLateralM = 0.21f;   // x 좌우
-    public float trayLengthM = 0.62f;    // z 주행/길이
+    public float trayLengthM = 0.61f;    // z 주행/길이
     public float heightLimitM = 0.27f;   // y 적층 한도 (H13)
     public float floorTopY = 0.01f;
 
