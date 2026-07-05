@@ -1,17 +1,19 @@
 {
   "version": 1,
+  "mode": "risky",
+  "profile": "risk_tall",
   "bed": {
     "widthX": 0.21,
-    "lengthZ": 0.62,
+    "lengthZ": 0.61,
     "wallHeight": 0.06
   },
   "cargo": [
     {
-      "type": "코일 C-001",
+      "type": "박스 B-005",
       "localPos": {
-        "x": 0.03,
-        "y": 0.02,
-        "z": -0.17
+        "x": -0.02,
+        "y": 0.06,
+        "z": 0.08
       },
       "localEuler": {
         "x": 0.0,
@@ -21,11 +23,67 @@
       "secured": true
     },
     {
-      "type": "박스 B-007",
+      "type": "박스 B-005",
       "localPos": {
-        "x": 0.01,
-        "y": 0.035,
-        "z": 0.04
+        "x": -0.02,
+        "y": 0.16,
+        "z": 0.08
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.26,
+        "z": 0.08
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.36,
+        "z": 0.08
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.46,
+        "z": 0.08
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.03,
+        "z": -0.12
       },
       "localEuler": {
         "x": 0.0,
@@ -35,10 +93,178 @@
       "secured": true
     },
     {
-      "type": "박스 B-004",
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.07,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.11,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.15,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.19,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.23,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.27,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.31,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.35,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.39,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.05,
+        "y": 0.43,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-002",
+      "localPos": {
+        "x": 0.05,
+        "y": 0.025,
+        "z": -0.12
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
       "localPos": {
         "x": -0.01,
         "y": 0.03,
+        "z": -0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": 0.02,
+        "y": 0.06,
         "z": 0.23
       },
       "localEuler": {

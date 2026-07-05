@@ -5,7 +5,7 @@
 다양한 적재 분포: 성긴 것 / 보통 / 꽉 찬 것 / 높이 초과 / 과적 / 편심(위험).
 
 저장 규약 (CargoLayoutFile):
-  bed: {widthX:0.21, lengthZ:0.62, wallHeight:0.06}
+  bed: {widthX:0.21, lengthZ:0.61, wallHeight:0.06}
   cargo[i]: {type:이름, localPos:{x,y,z}, localEuler:{x,y,z}, secured:bool}
   좌표: x=좌우[-0.105,0.105], z=주행[-0.31,0.31], y=바닥0.01+높이/2 (적층은 +아래top).
   회전(euler, 검증된 값): 박스/포대 (0,0,0) 또는 (0,90,0), 코일 (0,0,0), 파이프 (90,90,0).
@@ -22,7 +22,7 @@ CATALOG = os.path.join(ROOT, "Assets/Data/cargo_catalog.csv")
 N_CASES = 2000
 FLOOR = 0.01
 HALF_X = 0.105        # 0.21/2 좌우
-HALF_Z = 0.31         # 0.62/2 주행
+HALF_Z = 0.305         # 0.61/2 주행
 PAYLOAD = 7.0
 H_LIMIT = 0.27
 GRID = 0.01
@@ -189,7 +189,7 @@ def to_json(placed):
             secured=True,
         ))
     return dict(version=1,
-                bed=dict(widthX=0.21, lengthZ=0.62, wallHeight=0.06),
+                bed=dict(widthX=0.21, lengthZ=0.61, wallHeight=0.06),
                 cargo=cargo)
 
 def main():
