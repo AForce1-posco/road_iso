@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "mode": "risky",
+  "profile": "risk_tall",
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -7,67 +9,11 @@
   },
   "cargo": [
     {
-      "type": "흰 파이프 번들(3)",
+      "type": "박스 B-001",
       "localPos": {
-        "x": 0.03,
-        "y": 0.04,
-        "z": -0.08
-      },
-      "localEuler": {
-        "x": 90.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-002",
-      "localPos": {
-        "x": 0.0,
-        "y": 0.025,
-        "z": 0.26
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-003",
-      "localPos": {
-        "x": -0.07,
+        "x": -0.04,
         "y": 0.03,
-        "z": 0.02
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "스틸 파이프 번들(3)",
-      "localPos": {
-        "x": 0.08,
-        "y": 0.02,
-        "z": -0.06
-      },
-      "localEuler": {
-        "x": 90.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-003",
-      "localPos": {
-        "x": -0.03,
-        "y": 0.03,
-        "z": -0.16
+        "z": 0.14
       },
       "localEuler": {
         "x": 0.0,
@@ -79,9 +25,9 @@
     {
       "type": "박스 B-001",
       "localPos": {
-        "x": -0.06,
-        "y": 0.03,
-        "z": 0.15
+        "x": -0.04,
+        "y": 0.07,
+        "z": 0.14
       },
       "localEuler": {
         "x": 0.0,
@@ -93,13 +39,139 @@
     {
       "type": "박스 B-001",
       "localPos": {
-        "x": -0.05,
-        "y": 0.03,
-        "z": -0.27
+        "x": -0.04,
+        "y": 0.11,
+        "z": 0.14
       },
       "localEuler": {
         "x": 0.0,
         "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.15,
+        "z": 0.14
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.19,
+        "z": 0.14
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.23,
+        "z": 0.14
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.27,
+        "z": 0.14
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.31,
+        "z": 0.14
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.35,
+        "z": 0.14
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.39,
+        "z": 0.14
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.43,
+        "z": 0.14
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-006",
+      "localPos": {
+        "x": -0.01,
+        "y": 0.045,
+        "z": 0.01
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
         "z": 0.0
       },
       "secured": true

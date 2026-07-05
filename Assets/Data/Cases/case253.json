@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "mode": "risky",
+  "profile": "risk_eccentric",
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -7,81 +9,25 @@
   },
   "cargo": [
     {
-      "type": "박스 B-007",
+      "type": "흰 파이프 번들(2)",
       "localPos": {
-        "x": 0.02,
-        "y": 0.035,
-        "z": 0.09
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-003",
-      "localPos": {
-        "x": 0.02,
-        "y": 0.03,
-        "z": 0.28
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "포대 T-001",
-      "localPos": {
-        "x": 0.01,
+        "x": -0.06,
         "y": 0.025,
-        "z": -0.24
+        "z": -0.12
       },
       "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-001",
-      "localPos": {
-        "x": 0.02,
-        "y": 0.08,
-        "z": 0.09
-      },
-      "localEuler": {
-        "x": 0.0,
+        "x": 90.0,
         "y": 0.0,
         "z": 0.0
       },
       "secured": true
     },
     {
-      "type": "포대 T-001",
+      "type": "코일 C-001",
       "localPos": {
-        "x": 0.02,
-        "y": 0.115,
-        "z": 0.09
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-002",
-      "localPos": {
-        "x": 0.02,
-        "y": 0.145,
-        "z": 0.09
+        "x": -0.04,
+        "y": 0.02,
+        "z": 0.24
       },
       "localEuler": {
         "x": 0.0,

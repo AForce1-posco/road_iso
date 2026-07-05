@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "mode": "risky",
+  "profile": "risk_heavy",
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -7,11 +9,11 @@
   },
   "cargo": [
     {
-      "type": "박스 B-005",
+      "type": "박스 B-003",
       "localPos": {
-        "x": -0.01,
-        "y": 0.06,
-        "z": 0.1
+        "x": 0.03,
+        "y": 0.03,
+        "z": -0.1
       },
       "localEuler": {
         "x": 0.0,
@@ -21,11 +23,11 @@
       "secured": true
     },
     {
-      "type": "박스 B-006",
+      "type": "코일 C-001",
       "localPos": {
-        "x": 0.01,
-        "y": 0.045,
-        "z": -0.07
+        "x": 0.0,
+        "y": 0.02,
+        "z": 0.14
       },
       "localEuler": {
         "x": 0.0,
@@ -35,11 +37,11 @@
       "secured": true
     },
     {
-      "type": "박스 B-006",
+      "type": "코일 C-001",
       "localPos": {
-        "x": 0.0,
-        "y": 0.045,
-        "z": -0.19
+        "x": 0.01,
+        "y": 0.02,
+        "z": -0.24
       },
       "localEuler": {
         "x": 0.0,

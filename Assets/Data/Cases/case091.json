@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "mode": "risky",
+  "profile": "risk_tall",
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -7,11 +9,67 @@
   },
   "cargo": [
     {
-      "type": "코일 C-001",
+      "type": "박스 B-005",
       "localPos": {
         "x": 0.0,
-        "y": 0.02,
-        "z": 0.15
+        "y": 0.06,
+        "z": 0.02
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.16,
+        "z": 0.02
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.26,
+        "z": 0.02
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.36,
+        "z": 0.02
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.46,
+        "z": 0.02
       },
       "localEuler": {
         "x": 0.0,
@@ -23,9 +81,9 @@
     {
       "type": "코일 C-001",
       "localPos": {
-        "x": 0.03,
+        "x": 0.05,
         "y": 0.02,
-        "z": -0.12
+        "z": 0.18
       },
       "localEuler": {
         "x": 0.0,
@@ -35,15 +93,15 @@
       "secured": true
     },
     {
-      "type": "배관 파이프 S-001",
+      "type": "박스 B-007",
       "localPos": {
-        "x": -0.08,
-        "y": 0.03,
-        "z": -0.22
+        "x": 0.02,
+        "y": 0.035,
+        "z": -0.18
       },
       "localEuler": {
-        "x": 90.0,
-        "y": 0.0,
+        "x": 0.0,
+        "y": 90.0,
         "z": 0.0
       },
       "secured": true

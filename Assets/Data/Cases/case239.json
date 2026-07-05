@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "mode": "risky",
+  "profile": "risk_eccentric",
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -7,25 +9,11 @@
   },
   "cargo": [
     {
-      "type": "박스 B-001",
+      "type": "박스 B-004",
       "localPos": {
-        "x": -0.03,
+        "x": -0.05,
         "y": 0.03,
-        "z": 0.28
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-007",
-      "localPos": {
-        "x": 0.01,
-        "y": 0.035,
-        "z": -0.17
+        "z": -0.01
       },
       "localEuler": {
         "x": 0.0,
@@ -35,11 +23,53 @@
       "secured": true
     },
     {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.025,
+        "z": 0.25
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
       "type": "박스 B-005",
       "localPos": {
-        "x": -0.02,
+        "x": -0.05,
         "y": 0.06,
-        "z": 0.01
+        "z": -0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.055,
+        "z": 0.25
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.085,
+        "z": 0.25
       },
       "localEuler": {
         "x": 0.0,

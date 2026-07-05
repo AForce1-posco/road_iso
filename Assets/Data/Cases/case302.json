@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "mode": "risky",
+  "profile": "risk_heavy",
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -7,53 +9,11 @@
   },
   "cargo": [
     {
-      "type": "박스 B-005",
-      "localPos": {
-        "x": -0.01,
-        "y": 0.06,
-        "z": 0.04
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-005",
-      "localPos": {
-        "x": 0.04,
-        "y": 0.06,
-        "z": -0.16
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "배관 파이프 S-001",
-      "localPos": {
-        "x": -0.08,
-        "y": 0.03,
-        "z": 0.0
-      },
-      "localEuler": {
-        "x": 90.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
       "type": "코일 C-001",
       "localPos": {
-        "x": 0.01,
+        "x": 0.02,
         "y": 0.02,
-        "z": 0.22
+        "z": 0.14
       },
       "localEuler": {
         "x": 0.0,
@@ -63,42 +23,14 @@
       "secured": true
     },
     {
-      "type": "박스 B-005",
+      "type": "배관 파이프 S-003",
       "localPos": {
-        "x": 0.05,
-        "y": 0.06,
-        "z": -0.06
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "배관 파이프 S-001",
-      "localPos": {
-        "x": -0.04,
-        "y": 0.03,
-        "z": -0.28
+        "x": -0.06,
+        "y": 0.035,
+        "z": -0.1
       },
       "localEuler": {
         "x": 90.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-005",
-      "localPos": {
-        "x": -0.01,
-        "y": 0.16,
-        "z": 0.04
-      },
-      "localEuler": {
-        "x": 0.0,
         "y": 0.0,
         "z": 0.0
       },
