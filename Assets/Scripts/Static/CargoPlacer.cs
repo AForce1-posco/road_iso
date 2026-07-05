@@ -16,12 +16,12 @@ public class CargoPlacer : MonoBehaviour
 {
     public enum CameraMode { Angled, TopDown }
 
-    [Header("적재함 (바구니형 트레이, m) — 실측 21(좌우 X) × 62(주행/길이 Z), 벽 6 cm")]
+    [Header("적재함 (바구니형 트레이, m) — 실측 21(좌우 X) × 61(주행/길이 Z), 겉 64×24·벽두께 1.5 cm")]
     public float bedWidthX = 0.21f;    // 바닥 폭(X, 좌우)  — 실측 21cm
-    public float bedLengthZ = 0.62f;   // 바닥 길이(Z, 주행) — 실측 62cm
+    public float bedLengthZ = 0.61f;   // 바닥 길이(Z, 주행) — 실측 61cm
     public float wallHeight = 0.06f;   // 사방 벽 높이 (바구니)
     public float floorThickness = 0.01f;
-    public float wallThickness = 0.008f;
+    public float wallThickness = 0.015f;
     public bool hasWalls = true;
     public Material bedMaterial;
 

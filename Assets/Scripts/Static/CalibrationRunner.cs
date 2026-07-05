@@ -31,7 +31,7 @@ public class CalibrationRunner : MonoBehaviour
     public string visualizeCaseId = "";
     [Tooltip("좌우(가로) cm / 전후(길이) cm — 목업 프레임을 Unity 트레이 중심으로 옮길 때 사용")]
     public float lateralCm = 21f;   // x 폭
-    public float foreaftCm = 62f;   // y 길이
+    public float foreaftCm = 61f;   // y 길이
 
     [Header("실행")]
     public bool runOnStart = true;

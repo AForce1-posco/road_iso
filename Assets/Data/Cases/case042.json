@@ -1,11 +1,27 @@
 {
   "version": 1,
+  "mode": "normal",
+  "profile": "stable",
   "bed": {
     "widthX": 0.21,
-    "lengthZ": 0.62,
+    "lengthZ": 0.61,
     "wallHeight": 0.06
   },
   "cargo": [
+    {
+      "type": "박스 B-007",
+      "localPos": {
+        "x": 0.02,
+        "y": 0.035,
+        "z": -0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
     {
       "type": "배관 파이프 S-003",
       "localPos": {
@@ -21,15 +37,15 @@
       "secured": true
     },
     {
-      "type": "코일 C-001",
+      "type": "박스 B-004",
       "localPos": {
-        "x": 0.03,
-        "y": 0.02,
+        "x": 0.05,
+        "y": 0.03,
         "z": 0.12
       },
       "localEuler": {
         "x": 0.0,
-        "y": 0.0,
+        "y": 90.0,
         "z": 0.0
       },
       "secured": true
