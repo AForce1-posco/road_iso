@@ -49,6 +49,10 @@ public class PlacementAgent : Agent
     private List<CargoType> pool;                  // usableTypeIds → CargoType
     private int[] remaining;                        // 종류별 남은 수 (pool 인덱스)
     private readonly List<RuleChecker.PlacedItem> placed = new List<RuleChecker.PlacedItem>();
+
+    /// <summary>시각화용 읽기 전용 배치 목록 (PlacementVisualizer 가 사용). 학습엔 영향 없음.</summary>
+    public IReadOnlyList<RuleChecker.PlacedItem> PlacedItems => placed;
+
     private int invalidCount;
     private int placedTarget;                       // 이번 에피소드 총 배치 목표 수
     private bool setupDone;                          // Awake/Initialize 중복 방지

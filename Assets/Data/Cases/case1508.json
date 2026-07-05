@@ -1,122 +1,38 @@
 {
   "version": 1,
   "bed": {
-    "widthX": 0.64,
-    "lengthZ": 0.24,
+    "widthX": 0.21,
+    "lengthZ": 0.62,
     "wallHeight": 0.06
   },
   "cargo": [
     {
-      "type": "박스 B-004",
+      "type": "배관 파이프 S-001",
       "localPos": {
-        "x": -0.235,
+        "x": -0.02,
         "y": 0.03,
-        "z": -0.065
+        "z": -0.02
       },
       "localEuler": {
-        "x": 0.0,
+        "x": 90.0,
         "y": 0.0,
         "z": 0.0
       },
-      "secured": false
+      "secured": true
     },
     {
-      "type": "박스 B-007",
+      "type": "배관 파이프 S-003",
       "localPos": {
-        "x": -0.026,
-        "y": 0.0325,
-        "z": -0.0425
+        "x": 0.03,
+        "y": 0.035,
+        "z": -0.1
       },
       "localEuler": {
-        "x": 0.0,
+        "x": 90.0,
         "y": 0.0,
         "z": 0.0
       },
-      "secured": false
-    },
-    {
-      "type": "박스 B-004",
-      "localPos": {
-        "x": 0.183,
-        "y": 0.03,
-        "z": -0.065
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": false
-    },
-    {
-      "type": "박스 B-002",
-      "localPos": {
-        "x": -0.2475,
-        "y": 0.0225,
-        "z": 0.074
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": false
-    },
-    {
-      "type": "박스 B-003",
-      "localPos": {
-        "x": -0.0985,
-        "y": 0.03,
-        "z": 0.059
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": false
-    },
-    {
-      "type": "박스 B-003",
-      "localPos": {
-        "x": 0.0605,
-        "y": 0.03,
-        "z": 0.059
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": false
-    },
-    {
-      "type": "박스 B-002",
-      "localPos": {
-        "x": 0.2095,
-        "y": 0.0225,
-        "z": 0.074
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": false
-    },
-    {
-      "type": "박스 B-005",
-      "localPos": {
-        "x": -0.026,
-        "y": 0.105,
-        "z": -0.0425
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": false
+      "secured": true
     }
   ]
 }

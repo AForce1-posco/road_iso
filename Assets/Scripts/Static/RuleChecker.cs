@@ -67,17 +67,20 @@ public class RuleChecker
     bool H1_Payload(IReadOnlyList<PlacedItem> placed, PlacedItem cand)
         => TotalMass(placed) + cand.Mass <= cfg.maxPayloadKg + 1e-4f;
 
-    // H2 적재함 내부 (파이프는 길이축 z 오버행 허용 — 손글씨 ④/③ Case b)
+    // H2 적재함 내부. 파이프는 길이축 z 오버행 허용하되 **뒤(-z=테일게이트)만** —
+    // 앞(+z=운전석/캐빈)으로는 어떤 화물도 튀어나올 수 없음(물리적 불가). 손글씨 ④/③ Case b.
+    // 축 규약: LoadCalculator 기준 front=+z, right=+x.
     bool H2_Bounds(PlacedItem c)
     {
         if (c.center.x - c.halfSize.x < -TrayHalfX - cfg.eps) return false;
         if (c.center.x + c.halfSize.x > TrayHalfX + cfg.eps) return false;
         if (c.Bottom < cfg.floorTopY - cfg.eps) return false;
-        if (c.Shape != CargoShape.Pipe) // 파이프 외에만 z(길이) 경계 강제
-        {
-            if (c.center.z - c.halfSize.z < -TrayHalfZ - cfg.eps) return false;
-            if (c.center.z + c.halfSize.z > TrayHalfZ + cfg.eps) return false;
-        }
+
+        // 앞(+z=캐빈) 경계는 모든 화물 강제 — 오버행 금지
+        if (c.center.z + c.halfSize.z > TrayHalfZ + cfg.eps) return false;
+        // 뒤(-z=테일게이트)는 파이프만 오버행 허용
+        if (c.Shape != CargoShape.Pipe && c.center.z - c.halfSize.z < -TrayHalfZ - cfg.eps) return false;
+
         return true;
     }
 

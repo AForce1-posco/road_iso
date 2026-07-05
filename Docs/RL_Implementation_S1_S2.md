@@ -58,7 +58,7 @@
 | ID | 규칙 | 판정식 / 임계값 |
 |---|---|---|
 | **H1** | 과적 금지 | 총질량 + 후보 ≤ **7 kg** |
-| **H2** | 적재함 경계 내부 | AABB가 x[±0.105]·z[±0.31]·바닥 내부. **단 파이프는 z(길이) 오버행 허용** |
+| **H2** | 적재함 경계 내부 | AABB가 x[±0.105]·z[±0.31]·바닥 내부. **파이프 z 오버행은 뒤(−z=테일게이트)만** — 앞(+z=운전석/캐빈)은 모든 화물 오버행 금지 (2026-07-05 개정, §11) |
 | **H3** | 화물 겹침 금지 | 3D AABB 교차 X (격자 중첩=이걸로 커버) |
 | **H4** | 파이프 주행축(z) 배치 | 파이프의 halfSize.z가 최장(길이가 z 방향) |
 | **H5** | 파이프 바닥층 | 파이프 밑면 ≈ 바닥(y=0.01) |
@@ -149,10 +149,12 @@ R = w_LE·LE + w_CGS·CGS + w_SS·SS
 |---|---|---|
 | S1 | RuleChecker | ✅ 완료·검증 |
 | S2 | RewardCalculator | ✅ 완료·검증 |
-| S3 | ML-Agents + PlacementAgent | ✅ 코드완료 (씬 셋업·컴파일 확인 중) |
-| S4 | config.yaml + PPO 학습 | 대기 (Python 환경 필요) |
+| S3 | ML-Agents + PlacementAgent | ✅ 완료·씬검증 |
+| S4 | config.yaml + PPO 학습 | ✅ **1차 학습 완료** (§8) |
 | S5 | 동적 주행으로 검증 (RL vs 랜덤/휴리스틱) | 대기 |
 | S6 | 동적 예측모델 보상 교체 (2차) | 대기 |
+
+> **부가 작업 (2026-07-05):** ⓐ "톤백"→"포대" 전면 개명 + 빵빵한 자루형 메시로 교체 (§9). ⓑ RL 배치 시각화 도구 `PlacementVisualizer` 신설 (§10).
 
 ---
 
@@ -204,4 +206,75 @@ R = w_LE·LE + w_CGS·CGS + w_SS·SS
 
 ---
 
-_기록 시작 2026-07-05. S1 구현·검증 완료, S2 설계 확정. 이 문서는 구현 진행에 따라 갱신._
+## 8. S4 — PPO 1차 학습 (완료, 2026-07-05)
+
+### 8.1 파이썬 환경
+- **conda env `mlagents-x86`** (Apple Silicon → Rosetta x86). 전체 레시피·이유 = `Docs/RL_Env_Setup.md`.
+- 활성화: `source /opt/anaconda3/etc/profile.d/conda.sh && conda activate mlagents-x86`
+- 핵심 버전: python 3.9.13 / mlagents 0.28.0 / torch 1.8.1 / numpy 1.21.2 / protobuf 3.19.6 / tensorboard 2.10.1 / cryptography 41.0.7. **cattrs 패치**(`Docs/patch_cattrs_singledispatch.py`) 필수.
+
+### 8.2 config — `Docs/rl_config.yaml`
+- Behavior Name = **PlacementAgent** (Behavior Parameters와 일치해야 연결).
+- PPO: batch_size 128 / buffer_size 2048 / lr 3e-4(linear) / beta 5e-3 / hidden 256×2 / normalize true / gamma 0.99 / max_steps 500000 / time_horizon 64.
+- **알고리즘 교체**: `trainer_type: sac`로 바꾸면 SAC 실험 (환경 재작업 X). 마스킹은 ml-agents PPO/SAC 네이티브(=Maskable 기본 탑재). DQN·SB3 MaskablePPO는 `UnityToGymWrapper`+SB3 래퍼 필요(별도 작업, MultiDiscrete는 DQN 미지원).
+
+### 8.3 학습 실행
+```bash
+conda activate mlagents-x86
+mlagents-learn Docs/rl_config.yaml --run-id=placement_v1
+# "Start training..." → Unity에서 Behavior Type=Default 로 바꾸고 RLTraining 씬 Play (port 5004)
+```
+- **run-id 규칙**(터미널 인자): 새 실험=새 `--run-id`, 덮어쓰기=`--force`, 이어학습=`--resume`(같은 run-id).
+- **결과물** `results/<run-id>/`: `PlacementAgent.onnx`(최종) + `PlacementAgent/`(5만 스텝마다 체크포인트 .onnx/.pt) + events(TensorBoard) + configuration.yaml.
+- **곡선** `tensorboard --logdir results` → `http://localhost:6006` → **Cumulative Reward 우상향**이 학습 신호.
+- 중단해도 체크포인트 + Ctrl+C export로 기록 남음.
+
+### 8.4 1차 결과
+- 속도 ~205 스텝/s. **Mean Reward −1.671 → −0.361** (10k→500k, 꾸준히 우상향, **아직 미수렴**).
+- 음수인 건 초반 Fail(−0.5)·무효행동(−0.05) 페널티 평균이 남아서. 학습 신호는 확실. baseline 확보.
+
+### 8.5 학습된 모델 재생 (추론)
+- `results/.../PlacementAgent.onnx` → `Assets/`로 복사 → Behavior Parameters의 **Model 슬롯**에 넣고 **Behavior Type = Inference Only**.
+- ⚠️ **다시 학습**할 땐 Type을 **Default**로 (모델 슬롯은 무시됨, 빼도 됨). Inference Only면 트레이너 연결 안 함.
+
+### 8.6 다음 (실험 로드맵)
+- 같은 env로 **알고리즘/보상가중치 비교** (PPO↔SAC, w_LE/CGS/SS). run-id 나눠 TensorBoard 겹쳐보기.
+  ⚠️ **보상 정의를 바꾸면 Mean Reward 직접 비교 금지** — 스케일이 달라짐. 중립지표(실제 CoG편차·S5 전복여부)로 비교.
+- → **S5 동적 검증**: best onnx 배치 → 2000케이스 주행 → 실제 roll/LTR/전복 측정 → RL vs 랜덤/휴리스틱.
+
+---
+
+## 9. 부가 ⓐ — "톤백" → "포대" 전면 개명 + 자루형 메시 (2026-07-05)
+
+- **개명 범위**: 코드(`CargoCatalog.cs` name·주석), `Assets/Data/cargo_catalog.csv`, **케이스 JSON 478개** 전부 `톤백 T-001` → `포대 T-001`.
+- ⚠️ **왜 JSON까지?** `CargoBedLoader.cs`가 화물을 **이름(`t.name == name`)으로 매칭**함 → 카탈로그 이름만 바꾸면 2000케이스가 화물을 못 찾음. **id(`T-001`)는 불변**이라 RL 모델·풀은 영향 없음.
+- **모양 교체**: `CargoFactory.CreateSack` 캡슐 → **빵빵한 자루형 절차 메시**(`BuildBagMesh`: 단위 큐브를 구면으로 blend해 모서리 둥글림, 면 중심 ±0.5 유지 → 바운드=단위). 콜라이더는 안 구르는 BoxCollider. 정적·동적·RL 씬 전부 이 모양(CargoFactory 공용).
+
+## 10. 부가 ⓑ — RL 배치 시각화 `PlacementVisualizer.cs` (2026-07-05)
+
+파일: `Assets/Scripts/Static/PlacementVisualizer.cs` (표시 전용, **학습/보상/관측 무영향**).
+
+- **필요 이유**: PlacementAgent는 배치를 **순수 수학(AABB, `PlacedItem`)으로만** 계산 → 3D를 안 그림. 이 컴포넌트 없으면 씬에 아무것도 안 보이고 Console 로그만 남음.
+- **연결**: PlacementAgent에 공개 접근자 `PlacedItems`(읽기전용) 추가 → 시각화가 그걸 읽어 그림.
+- **그리는 것**:
+  - 화물 = **CargoFactory 재사용**(실물 모양·재질). 회전(rot90)은 halfSize로 역산해 wrapper yaw 90°.
+  - 적재함(0.21×0.62×0.27) = 바닥판 + 하늘색 와이어박스 + **6×16 그리드**(RL 96셀과 동일).
+  - **최대높이 27cm** = (A) 상단 빨간 굵은 테두리 + (B) 반투명 빨간 천장면.
+  - **무게중심(CoG)** = 빨간 구 + 바닥까지 수직선 (실시간).
+  - `autoCamera`(Game뷰 전용 카메라), `displayScale`(기본 10배), `showGrid`/`showCoG` 토글.
+- ⚠️ **학습 중엔 끄기**: time_scale 20배라 눈으로 못 보고, 매 배치 메시 생성이 학습을 느리게 함. 추론(Inference Only) 1배속 재생 때만 사용.
+
+---
+
+## 11. 부가 ⓒ — 축 규약 & 오버행 규칙 개정 + 코너 라벨 (2026-07-05)
+
+- **축 규약 확정** (`LoadCalculator.cs` 명시): **front(운전석/캐빈) = +z**, **right = +x**.
+  - FL(−x,+z) · FR(+x,+z) = **앞** / RL(−x,−z) · RR(+x,−z) = **뒤**.
+- **H2 오버행 개정**: 기존엔 파이프가 z 양쪽으로 오버행 가능 → **물리적 오류**(앞은 운전석이라 불가).
+  - 수정: 앞(+z) 경계는 **모든 화물 강제**, 뒤(−z)만 파이프 오버행 허용. `RuleChecker.H2_Bounds`.
+  - ⚠️ 기존 `.onnx`는 옛 규칙으로 학습됨 → 새 규칙 하에선 앞 오버행 시도가 **Fail 처리**(재생 시 앞 오버행 안 보임). 깔끔한 모델은 **재학습** 필요.
+- **코너 라벨 FL/FR/RL/RR**: RL 시각화(`PlacementVisualizer`)와 정적 씬(`CargoPlacer`, `showCornerLabels` 토글) 둘 다 4코너 TextMesh. 앞=주황, 뒤=하늘색.
+
+---
+
+_기록 시작 2026-07-05. S1~S4(PPO 1차 학습) 완료. 포대 개명·배치 시각화·H2 오버행 개정(앞 금지) 반영. 이 문서는 구현 진행에 따라 갱신._

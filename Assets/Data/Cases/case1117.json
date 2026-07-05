@@ -1,66 +1,80 @@
 {
   "version": 1,
   "bed": {
-    "widthX": 0.64,
-    "lengthZ": 0.24,
+    "widthX": 0.21,
+    "lengthZ": 0.62,
     "wallHeight": 0.06
   },
   "cargo": [
     {
-      "type": "흰 파이프 번들(2)",
+      "type": "배관 파이프 S-001",
       "localPos": {
-        "x": 0.16,
-        "y": 0.04,
-        "z": -0.085
+        "x": -0.07,
+        "y": 0.03,
+        "z": 0.08
       },
       "localEuler": {
         "x": 90.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-005",
+      "localPos": {
+        "x": 0.02,
+        "y": 0.06,
+        "z": 0.01
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-003",
+      "localPos": {
+        "x": -0.01,
+        "y": 0.03,
+        "z": -0.26
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": 0.04,
+        "y": 0.025,
+        "z": 0.15
+      },
+      "localEuler": {
+        "x": 0.0,
         "y": 90.0,
         "z": 0.0
       },
-      "secured": false
+      "secured": true
     },
     {
-      "type": "박스 B-004",
+      "type": "박스 B-005",
       "localPos": {
-        "x": 0.085,
-        "y": 0.03,
-        "z": -0.001
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": false
-    },
-    {
-      "type": "톤백 T-001",
-      "localPos": {
-        "x": 0.204,
+        "x": 0.01,
         "y": 0.06,
-        "z": -0.016
+        "z": -0.13
       },
       "localEuler": {
         "x": 0.0,
-        "y": 0.0,
+        "y": 90.0,
         "z": 0.0
       },
-      "secured": false
-    },
-    {
-      "type": "박스 B-001",
-      "localPos": {
-        "x": 0.045,
-        "y": 0.0325,
-        "z": 0.073
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": false
+      "secured": true
     }
   ]
 }

@@ -95,7 +95,7 @@ public static class CargoCatalog
             Box("B-005", "박스 B-005", 0.785f, 10f, 10f, 10f, 2,  "내부 무게추"),
             Box("B-006", "박스 B-006", 0.486f, 17f, 10f, 7f,  6,  "내부 무게추"),
             Box("B-007", "박스 B-007", 2.2f,   25f, 15f, 5f,  1,  "내부 무게추"),
-            new CargoType { id = "T-001", name = "톤백 T-001", massKg = 0.38f,
+            new CargoType { id = "T-001", name = "포대 T-001", massKg = 0.38f,
                 sizeM = new Vector3(0.13f, 0.03f, 0.09f), shape = CargoShape.Sack, stockCount = 10, note = "포대형" },
             new CargoType { id = "C-001", name = "코일 C-001", massKg = 1.0f,
                 sizeM = new Vector3(0.11f, 0.02f, 0.11f), shape = CargoShape.Coil, innerDiameterM = 0.04f, stockCount = 5, note = "도넛형" },

@@ -1,45 +1,17 @@
 {
   "version": 1,
   "bed": {
-    "widthX": 0.64,
-    "lengthZ": 0.24,
+    "widthX": 0.21,
+    "lengthZ": 0.62,
     "wallHeight": 0.06
   },
   "cargo": [
     {
-      "type": "박스 B-001",
-      "localPos": {
-        "x": -0.275,
-        "y": 0.0325,
-        "z": 0.025
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-001",
-      "localPos": {
-        "x": -0.191,
-        "y": 0.0325,
-        "z": 0.025
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
       "type": "코일 C-001",
       "localPos": {
-        "x": -0.097,
+        "x": 0.03,
         "y": 0.02,
-        "z": 0.055
+        "z": 0.1
       },
       "localEuler": {
         "x": 0.0,
@@ -49,25 +21,123 @@
       "secured": true
     },
     {
-      "type": "납벨트 W-001",
+      "type": "박스 B-003",
       "localPos": {
-        "x": 0.002,
-        "y": 0.015,
-        "z": 0.0425
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-004",
-      "localPos": {
-        "x": 0.131,
+        "x": 0.06,
         "y": 0.03,
-        "z": 0.055
+        "z": -0.11
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "흰 파이프 번들(3)",
+      "localPos": {
+        "x": -0.06,
+        "y": 0.04,
+        "z": -0.13
+      },
+      "localEuler": {
+        "x": 90.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "배관 파이프 S-001",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.03,
+        "z": -0.25
+      },
+      "localEuler": {
+        "x": 90.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-006",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.045,
+        "z": 0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.03,
+        "y": 0.03,
+        "z": 0.29
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.1,
+        "z": 0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-003",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.14,
+        "z": 0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.175,
+        "z": 0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-002",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.205,
+        "z": 0.21
       },
       "localEuler": {
         "x": 0.0,
