@@ -99,6 +99,8 @@ public class StaticDashboardUGUI : MonoBehaviour
         btnCog = MakeButton(bar.transform, "CoG", () => { cogVisible = !cogVisible; cogMarker?.SetMarkerVisible(cogVisible); safetyZone?.SetVisible(cogVisible); Tint(btnCog, cogVisible); });
         MakeButton(bar.transform, "시점", () => placer.ToggleCameraView());
         btnPhysics = MakeButton(bar.transform, "물리", () => { physicsOn = !physicsOn; placer.SetPhysics(physicsOn); Tint(btnPhysics, physicsOn); });
+        btnSnapGrid = MakeButton(bar.transform, "격자스냅", () => { placer.snapToGrid = !placer.snapToGrid; Tint(btnSnapGrid, placer.snapToGrid); });
+        btnSnapMag = MakeButton(bar.transform, "자석", () => { placer.snapToCargo = !placer.snapToCargo; Tint(btnSnapMag, placer.snapToCargo); });
         MakeButton(bar.transform, "되돌리기", () => placer.Undo());
         MakeButton(bar.transform, "전체삭제", () => placer.ClearAll());
         MakeButton(bar.transform, "kg/t", () => { useTons = !useTons; Refresh(placer.Placed); });
@@ -107,9 +109,10 @@ public class StaticDashboardUGUI : MonoBehaviour
         MakeButton(bar.transform, "불러오기", () => placer.LoadLayout());
 
         Tint(btnGrid, gridVisible); Tint(btnCog, cogVisible); Tint(btnPhysics, physicsOn);
+        Tint(btnSnapGrid, placer.snapToGrid); Tint(btnSnapMag, placer.snapToCargo);
     }
 
-    private Button btnGrid, btnCog, btnPhysics;
+    private Button btnGrid, btnCog, btnPhysics, btnSnapGrid, btnSnapMag;
 
     /// <summary>토글 버튼 켜짐/꺼짐 색. 특히 물리 ON 상태가 한눈에 보이게.</summary>
     private static void Tint(Button b, bool on)

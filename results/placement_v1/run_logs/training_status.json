@@ -1,0 +1,65 @@
+{
+    "PlacementAgent": {
+        "checkpoints": [
+            {
+                "steps": 349997,
+                "file_path": "results/placement_v1/PlacementAgent/PlacementAgent-349997.onnx",
+                "reward": -0.4536683752597449,
+                "creation_time": 1783193995.567324,
+                "auxillary_file_paths": [
+                    "results/placement_v1/PlacementAgent/PlacementAgent-349997.pt"
+                ]
+            },
+            {
+                "steps": 399997,
+                "file_path": "results/placement_v1/PlacementAgent/PlacementAgent-399997.onnx",
+                "reward": -0.455717774728934,
+                "creation_time": 1783194241.5990138,
+                "auxillary_file_paths": [
+                    "results/placement_v1/PlacementAgent/PlacementAgent-399997.pt"
+                ]
+            },
+            {
+                "steps": 449998,
+                "file_path": "results/placement_v1/PlacementAgent/PlacementAgent-449998.onnx",
+                "reward": -0.41562391795548315,
+                "creation_time": 1783194473.6086972,
+                "auxillary_file_paths": [
+                    "results/placement_v1/PlacementAgent/PlacementAgent-449998.pt"
+                ]
+            },
+            {
+                "steps": 499997,
+                "file_path": "results/placement_v1/PlacementAgent/PlacementAgent-499997.onnx",
+                "reward": -0.3633385969532861,
+                "creation_time": 1783194715.3325582,
+                "auxillary_file_paths": [
+                    "results/placement_v1/PlacementAgent/PlacementAgent-499997.pt"
+                ]
+            },
+            {
+                "steps": 500005,
+                "file_path": "results/placement_v1/PlacementAgent/PlacementAgent-500005.onnx",
+                "reward": -0.3607323190211078,
+                "creation_time": 1783194715.404363,
+                "auxillary_file_paths": [
+                    "results/placement_v1/PlacementAgent/PlacementAgent-500005.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 500005,
+            "file_path": "results/placement_v1/PlacementAgent.onnx",
+            "reward": -0.3607323190211078,
+            "creation_time": 1783194715.404363,
+            "auxillary_file_paths": [
+                "results/placement_v1/PlacementAgent/PlacementAgent-500005.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "0.28.0",
+        "torch_version": "1.8.1"
+    }
+}

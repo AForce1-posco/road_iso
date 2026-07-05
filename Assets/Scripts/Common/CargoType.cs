@@ -5,7 +5,7 @@ using UnityEngine;
 /// 화물 형상.
 /// Box=상자, Drum=세로 원통, Pipe=길이(Z)로 누운 원통,
 /// Coil=중공 원판(도넛, 축=세로. 구멍은 시각 표현 — 물리 콜라이더는 convex라 막혀 있음),
-/// Sack=자루(톤백: 둥근 비주얼 + 안 구르는 박스 콜라이더로 근사).
+/// Sack=포대(빵빵한 자루형: 둥근 상자 비주얼 + 안 구르는 박스 콜라이더로 근사).
 /// </summary>
 public enum CargoShape { Box, Drum, Pipe, Coil, Sack }
 

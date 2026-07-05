@@ -39,7 +39,7 @@ public static class CargoFactory
             case CargoShape.Coil: // 중공 도넛(축=세로). 구멍은 시각 표현, 콜라이더는 convex(막힘)
                 go = CreateCoil(type, scale);
                 break;
-            case CargoShape.Sack: // 톤백: 캡슐 비주얼 + 안 구르는 박스 콜라이더 (강체 근사)
+            case CargoShape.Sack: // 포대: 빵빵한 자루(둥근 상자) 비주얼 + 안 구르는 박스 콜라이더 (강체 근사)
                 go = CreateSack(s);
                 break;
             default: // Box
@@ -77,12 +77,80 @@ public static class CargoFactory
 
     private static GameObject CreateSack(Vector3 s)
     {
-        var go = GameObject.CreatePrimitive(PrimitiveType.Capsule); // 메시 기준 높이 2, 지름 1
-        go.transform.localScale = new Vector3(s.x, s.y * 0.5f, s.z);
-        SafeDestroy(go.GetComponent<Collider>());
+        // 빵빵한 자루형: 단위 둥근상자(±0.5) 메시를 sizeM 크기로. 모서리를 둥글려 "속이 찬 포대" 느낌.
+        var go = new GameObject("Sack");
+        var mf = go.AddComponent<MeshFilter>();
+        go.AddComponent<MeshRenderer>();
+        mf.sharedMesh = BuildBagMesh(6, 0.38f);
+        go.transform.localScale = s;
+
+        // 안 구르는 박스 콜라이더 (강체 근사). 메시 바운드가 ±0.5라 size=1 → 월드에서 sizeM
         var bc = go.AddComponent<BoxCollider>();
-        bc.size = new Vector3(1f, 2f, 1f); // 로컬 메시 바운드에 맞춤 → 월드에서 sizeM
+        bc.center = Vector3.zero;
+        bc.size = Vector3.one;
         return go;
+    }
+
+    /// <summary>
+    /// 빵빵한 자루(둥근 상자) 메시. 단위 큐브(±0.5)를 구면으로 blend 해 모서리를 둥글린다.
+    /// round=0(각진 상자)~1(구). 면 중심은 ±0.5 유지 → 바운드=단위. +Y 면 하나 만들어 6방향 회전 결합.
+    /// </summary>
+    private static Mesh BuildBagMesh(int seg, float round)
+    {
+        Mesh face = BuildRoundedFaceY(seg, round);
+        Quaternion[] rots =
+        {
+            Quaternion.identity,          Quaternion.Euler(180f, 0f, 0f),   // +Y, -Y
+            Quaternion.Euler(0f, 0f, -90f), Quaternion.Euler(0f, 0f, 90f),  // +X, -X
+            Quaternion.Euler(90f, 0f, 0f),  Quaternion.Euler(-90f, 0f, 0f), // +Z, -Z
+        };
+        var cs = new CombineInstance[6];
+        for (int k = 0; k < 6; k++)
+            cs[k] = new CombineInstance { mesh = face, transform = Matrix4x4.TRS(Vector3.zero, rots[k], Vector3.one) };
+
+        var mesh = new Mesh { name = "Bag" };
+        mesh.CombineMeshes(cs, true, true); // 회전 반영, 법선도 회전됨 → 6면 모두 바깥향
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    /// <summary>+Y 를 향하는 둥근 면 하나 (구면 blend). 법선 부호를 검사해 바깥(+Y)으로 맞춤.</summary>
+    private static Mesh BuildRoundedFaceY(int seg, float round)
+    {
+        var verts = new List<Vector3>();
+        int stride = seg + 1;
+        for (int j = 0; j <= seg; j++)
+            for (int i = 0; i <= seg; i++)
+            {
+                Vector3 v = new Vector3(-0.5f + i / (float)seg, 0.5f, -0.5f + j / (float)seg);
+                verts.Add(Vector3.Lerp(v, v.normalized * 0.5f, round));
+            }
+
+        var tris = new List<int>();
+        for (int j = 0; j < seg; j++)
+            for (int i = 0; i < seg; i++)
+            {
+                int a = j * stride + i, b = a + 1, c = a + stride, d = c + 1;
+                tris.Add(a); tris.Add(c); tris.Add(b);
+                tris.Add(b); tris.Add(c); tris.Add(d);
+            }
+
+        var m = new Mesh();
+        m.SetVertices(verts);
+        m.SetTriangles(tris, 0);
+        m.RecalculateNormals();
+
+        // 바깥(+Y) 확인 — 반대면 감김 뒤집기
+        Vector3 avg = Vector3.zero;
+        foreach (var n in m.normals) avg += n;
+        if (Vector3.Dot(avg, Vector3.up) < 0f)
+        {
+            for (int t = 0; t < tris.Count; t += 3) { int tmp = tris[t + 1]; tris[t + 1] = tris[t + 2]; tris[t + 2] = tmp; }
+            m.SetTriangles(tris, 0);
+            m.RecalculateNormals();
+        }
+        m.RecalculateBounds();
+        return m;
     }
 
     /// <summary>이름 끝의 "(N)"에서 번들 개수를 읽는다. 없거나 파싱 실패 시 1.</summary>
@@ -272,7 +340,7 @@ public static class CargoFactory
 
     /// <summary>
     /// 화물 종류별 실물 재질(색·금속감·광택). 텍스처 없이 PBR 파라미터만으로 "장난감→실물" 근사.
-    /// 골판지=갈색 무광, 톤백=베이지 천, 코일=브러시 스틸, 흰파이프=PVC 광택, 스틸파이프=아연도금,
+    /// 골판지=갈색 무광, 포대=베이지 천, 코일=브러시 스틸, 흰파이프=PVC 광택, 스틸파이프=아연도금,
     /// 납벨트=짙은 금속, 드럼=파란 강철드럼.
     /// </summary>
     public static Material MakeRealistic(CargoType type)
@@ -286,7 +354,7 @@ public static class CargoFactory
         {
             case CargoShape.Coil: // 강철 코일 — 브러시드 스틸
                 color = new Color(0.76f, 0.77f, 0.79f); metallic = 0.9f; smoothness = 0.5f; break;
-            case CargoShape.Sack: // 톤백 — 짜임 천(베이지), 완전 무광
+            case CargoShape.Sack: // 포대 — 짜임 천(베이지), 완전 무광
                 color = new Color(0.86f, 0.82f, 0.72f); metallic = 0f; smoothness = 0.05f; break;
             case CargoShape.Drum: // 드럼통 — 파란 강철
                 color = new Color(0.20f, 0.35f, 0.60f); metallic = 0.6f; smoothness = 0.45f; break;
