@@ -144,6 +144,15 @@
   - **`BinPackerRunner` 정리**: 랜덤 배치 제거 → manifest 지정 → Dense pack → JSON 1개 저장 + 부피점유율 로그.
 - **다음**: 3D BPP 씬 BinPackerVisualizer에 manifest 채우고 packMode=Dense → Play/Repack(부피점유율↑ 확인) → Save Layout JSON → (이후) 동적 주행 → PPO.
 
+## 2026-07-06 (오후 7) — boxpack001 단일 케이스 PPO 착수
+
+- **목표**: boxpack001.json을 만든 고정 화물 목록(**B-004×8·SYN-04×4·SYN-03×4**, 16개·6.76kg)으로 현재 정적 보상/룰/액션으로 PPO → RL 배치 vs binpacker(boxpack001) 비교. 동적 예측기 전 단계라 정적 근사 최적화.
+- **의미**: 분포 없는 **단일 고정 문제** = 최소 RL. "박스에서 RL 파이프라인 작동 + binpacker 초과" 최소 증명. (그간 붕괴 반복이라 단일 케이스로 작동부터 확인.)
+- **구현(PlacementAgent)**: `useFixedManifest`+`fixedManifest`(ManifestEntry[]) 추가. 켜면 매 에피소드 그 목록 그대로, 풀도 그 manifest의 distinct 타입으로 자동 구성(→ 액션공간 최소, 여기선 3종 → obs 350·action (3,341,2)). `BuildFixedRemaining` 미리계산, OnEpisodeBegin에 고정 분기.
+- **config**: `Docs/rl_config_box.yaml` 신설 — 순수 PPO(BC·GAIL 없음, 단일 케이스+Option C라 워밍스타트 불필요). beta 0.01, hidden 256, summary_freq 5000.
+- ⚠️ boxpack001.json(B-004×8·SYN-04×4·SYN-03×4)과 3D BPP 씬 현재 인스펙터(B-004×5·B-005×4·C-001×6)가 다름 — JSON 저장 후 인스펙터 변경한 것. **PPO fixedManifest는 JSON 내용 기준**.
+- **다음**: RLTraining 씬 PlacementAgent에 fixedManifest 채우고 → `--run-id=boxpack001_ppo`. 양수 등반·binpacker Final 초과 관찰.
+
 ---
 
 _(새 항목은 이 아래에 추가)_

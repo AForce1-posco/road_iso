@@ -31,6 +31,7 @@ public class CargoRiskRecorder : MonoBehaviour
     public float cautionShiftM = 0.15f;
 
     [Header("출력")]
+    [Tooltip("비우면 기본 results.csv(전체 누적). 파일명만 넣으면(예: results_boxpack001.csv) Data/Results 하위 새 파일로 분리. 전체 경로도 가능.")]
     public string resultsPath = "";        // 비우면 Assets/Data/Results/results.csv
 
     [Header("실시간 표시")]
@@ -60,9 +61,18 @@ public class CargoRiskRecorder : MonoBehaviour
     private Vector3 initCogLocal;      // bedAnchor 로컬 (x=좌우, z=전후, y=바닥 위 높이)
     private string sourceLayout = "";
 
-    private string ResolvedResultsPath => string.IsNullOrEmpty(resultsPath)
-        ? Path.Combine(Application.dataPath, "Data/Results/results.csv")
-        : resultsPath;
+    private string ResolvedResultsPath
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(resultsPath))
+                return Path.Combine(Application.dataPath, "Data/Results/results.csv");
+            // 경로 구분자 없으면 파일명만 준 것 → Data/Results 하위에 저장
+            if (!resultsPath.Contains("/") && !resultsPath.Contains("\\"))
+                return Path.Combine(Application.dataPath, "Data/Results", resultsPath);
+            return resultsPath;   // 전체/상대 경로면 그대로
+        }
+    }
 
     void Awake()
     {

@@ -41,6 +41,14 @@ public class PlacementAgent : Agent
         "C-001","T-001","P-001","P-002","P-003","S-001"
     };
 
+    [Header("단일 케이스 (고정 manifest) — boxpack PPO용")]
+    [Tooltip("켜면 매 에피소드 아래 fixedManifest 를 그대로 사용(랜덤·게이팅풀 무시). 화물 풀도 이 manifest 타입으로 자동 구성 → 액션공간 최소.")]
+    public bool useFixedManifest = false;
+    [Tooltip("고정 적재 목록 (화물 id, 개수). useFixedManifest 켜면 매 에피소드 이 목록 그대로.")]
+    public ManifestEntry[] fixedManifest = new ManifestEntry[0];
+    private int[] fixedRemaining;   // 고정 manifest → pool 인덱스별 개수
+    private int fixedTotal;
+
     [Header("A안: 게이팅 manifest 풀 (BC 정합, 권장)")]
     [Tooltip("켜면 오프라인 생성된 '교사 완주 가능' manifest 풀에서 뽑음 — 리셋당 Pack 0회(timeout 없음)·데모와 분포 일치. 파일 없으면 런타임 샘플링으로 자동 폴백")]
     public bool useGatedPool = true;
@@ -105,17 +113,45 @@ public class PlacementAgent : Agent
         var cat = new Dictionary<string, CargoType>();
         foreach (var t in CargoCatalog.CreateDefault()) if (t != null) cat[t.id] = t;
         pool = new List<CargoType>();
-        foreach (var id in usableTypeIds) if (cat.TryGetValue(id, out var t)) pool.Add(t);
+        if (useFixedManifest && fixedManifest != null && fixedManifest.Length > 0)
+        {
+            // 고정 manifest의 distinct 타입만 풀에 (등장 순서) → 액션공간 최소
+            foreach (var e in fixedManifest)
+                if (e != null && !string.IsNullOrWhiteSpace(e.typeId) && cat.TryGetValue(e.typeId.Trim(), out var t) && !pool.Contains(t))
+                    pool.Add(t);
+        }
+        else
+        {
+            foreach (var id in usableTypeIds) if (cat.TryGetValue(id, out var t)) pool.Add(t);
+        }
 
-        if (useGatedPool) LoadGatedPool();
+        if (useFixedManifest) BuildFixedRemaining();
+        else if (useGatedPool) LoadGatedPool();
 
         // 관측 크기 · 행동 스펙 코드로 설정 (인스펙터 수동세팅 불필요)
         var bp = GetComponent<BehaviorParameters>();
         bp.BrainParameters.VectorObservationSize = ObsSize;
         bp.BrainParameters.ActionSpec = ActionSpec.MakeDiscrete(NumTypes, NumCells, 2);
-        if (MaxStep == 0) MaxStep = (manifestMax + maxInvalidPerEpisode) * 3;
+        int epLen = useFixedManifest ? fixedTotal : manifestMax;
+        if (MaxStep == 0) MaxStep = (epLen + maxInvalidPerEpisode) * 3;
 
         Debug.Log($"[PlacementAgent] obs={ObsSize}, action=({NumTypes},{NumCells},2), pool={NumTypes}종");
+    }
+
+    /// <summary>고정 manifest → pool 인덱스별 개수(fixedRemaining) + 총합(fixedTotal) 미리 계산.</summary>
+    private void BuildFixedRemaining()
+    {
+        fixedRemaining = new int[pool.Count];
+        var idIdx = new Dictionary<string, int>();
+        for (int i = 0; i < pool.Count; i++) idIdx[pool[i].id] = i;
+        fixedTotal = 0;
+        foreach (var e in fixedManifest)
+            if (e != null && !string.IsNullOrWhiteSpace(e.typeId) && idIdx.TryGetValue(e.typeId.Trim(), out int ix))
+            {
+                int n = Mathf.Max(0, e.count);
+                fixedRemaining[ix] += n; fixedTotal += n;
+            }
+        Debug.Log($"[PlacementAgent] 고정 manifest 사용: 총 {fixedTotal}개 ({pool.Count}종)");
     }
 
     public override void OnEpisodeBegin()
@@ -124,7 +160,13 @@ public class PlacementAgent : Agent
         invalidCount = 0;
         remaining = new int[NumTypes];
 
-        if (useGatedPool && gatedManifests != null && gatedManifests.Count > 0)
+        if (useFixedManifest && fixedRemaining != null)
+        {
+            // 단일 케이스: 매 에피소드 같은 고정 manifest (랜덤 없음)
+            placedTarget = fixedTotal;
+            System.Array.Copy(fixedRemaining, remaining, NumTypes);
+        }
+        else if (useGatedPool && gatedManifests != null && gatedManifests.Count > 0)
         {
             // A안: 오프라인 게이팅 풀에서 뽑기 — 리셋당 Pack 0회(timeout 없음)·데모와 분포 일치.
             var m = gatedManifests[Random.Range(0, gatedManifests.Count)];
