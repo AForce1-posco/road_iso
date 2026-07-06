@@ -153,6 +153,13 @@
 - ⚠️ boxpack001.json(B-004×8·SYN-04×4·SYN-03×4)과 3D BPP 씬 현재 인스펙터(B-004×5·B-005×4·C-001×6)가 다름 — JSON 저장 후 인스펙터 변경한 것. **PPO fixedManifest는 JSON 내용 기준**.
 - **다음**: RLTraining 씬 PlacementAgent에 fixedManifest 채우고 → `--run-id=boxpack001_ppo`. 양수 등반·binpacker Final 초과 관찰.
 
+## 2026-07-06 (오후 8) — ✅ boxpack001 from-scratch PPO 성공 (Option C 검증)
+
+- **guaranteedCompletion OFF** 때: −1.85(무효 페널티 누적, MaxStep까지 헤맴). **ON으로 켜니**: Mean Reward **1.03→1.13**, Std ~0.09, **~25k에서 수렴**. 45k에서 수동 정지(Ctrl+C), onnx 저장.
+- **의미**: Option C(보장된 완주) 설계가 옳았음이 실측 검증됨(양수·붕괴 없음). **그간 붕괴 반복하던 RL이 박스 단일케이스에서 드디어 학습.** 이것이 **from-scratch baseline (v1)** = `results/boxpack001_ppo/PlacementAgent.onnx`.
+- ⚠️ 누적보상 1.13은 step shaping 포함 → binpacker Final(0~1)과 직접비교 X. 우열은 배치/Final로 따로 비교.
+- **다음**: from-scratch는 baseline으로 보존. **`RefinementAgent`(v2) 별도 스크립트** 구현(빈패커 배치서 시작→이동/회전, 정적 보상, 예측기 오면 교체) → v1 vs v2 비교. (사용자 결정: 두 버전 다 남겨 "여러 방식 시도" 기록.)
+
 ---
 
 _(새 항목은 이 아래에 추가)_
