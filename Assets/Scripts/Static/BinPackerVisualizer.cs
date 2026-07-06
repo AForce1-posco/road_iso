@@ -4,53 +4,40 @@ using System.Text;
 using UnityEngine;
 
 /// <summary>
-/// BinPacker 배치를 화면에 그려주는 표시 전용 시각화 (PlacementVisualizer의 빈패커판).
-/// 사용: 아무 씬(빈 씬 권장)에 빈 GameObject 만들고 이 컴포넌트만 추가 → Play
-///       → 랜덤 manifest를 빈패커로 배치해 트레이·격자·27cm한도·CoG·실물 화물 모양으로 표시.
-///       인스펙터 우클릭 "Repack (새 manifest)" 로 다음 배치를 계속 넘겨봄.
-/// RL 쪽(PlacementAgent/PlacementVisualizer)은 전혀 건드리지 않음 — 독립 도구.
-/// 설계: Docs/BinPacker_Design.md
+/// 순수 3D BPP 시각화 도구. 지정한 manifest(인스펙터 (id,개수) 목록 또는 CSV)를 빈패킹으로 배치해
+/// 트레이·격자·높이한도·CoG·실물 화물 모양으로 표시. 우클릭 "Repack"으로 다시, "Save Layout JSON"으로 저장.
+/// 기본은 Dense(공간 꽉 채우기). RL(PlacementAgent)과 독립. 설계: Docs/BinPacker_Design.md
 /// </summary>
 public class BinPackerVisualizer : MonoBehaviour
 {
-    [Header("패킹 모드 — Stable=안정성 최적(BC 교사) / Dense=고전 빈패킹(공간만)")]
-    public BinPacker.PackMode packMode = BinPacker.PackMode.Stable;
+    [Header("패킹 모드 — Dense=공간 꽉 채우기(순수 BPP) / Stable=안정성 우선")]
+    public BinPacker.PackMode packMode = BinPacker.PackMode.Dense;
 
-    [Header("규제/보상 (RL과 동일하게 유지)")]
+    [Header("규제/격자")]
     public RuleConfig ruleConfig = new RuleConfig();
     public RewardConfig rewardConfig = new RewardConfig();
-    [Tooltip("격자 — 2cm급 = 11×31 (RL과 동일해야 BC 정합)")]
+    [Tooltip("격자 (x=cols, z=rows). 2cm급 = 11×31")]
     public int cols = 11;
     public int rows = 31;
 
-    [Header("Manifest (실을 화물)")]
-    public int manifestMin = 8;
-    public int manifestMax = 12;
-    [Tooltip("사용할 화물 종류(RL 풀과 동일 권장). 비우면 카탈로그 전체")]
-    public string[] usableTypeIds = {
-        "B-001","B-002","B-003","B-004","B-005","B-006",
-        "C-001","T-001","P-001","P-002","P-003","S-001"
+    [Header("적재 목록 (Manifest)")]
+    [Tooltip("(화물 id, 개수) 목록. manifestCsv 가 지정되면 그쪽이 우선.")]
+    public ManifestEntry[] manifest = {
+        new ManifestEntry { typeId = "SYN-01", count = 5 },
+        new ManifestEntry { typeId = "SYN-02", count = 4 },
+        new ManifestEntry { typeId = "SYN-03", count = 6 },
     };
-    [Tooltip("0이면 매번 다른 랜덤, 아니면 재현 가능한 시드")]
-    public int seed = 0;
+    [Tooltip("선택: Assets/ 기준 CSV 경로(예: Data/manifest.csv). 한 줄에 'id,개수'. 지정 시 위 목록 대신 이걸 씀.")]
+    public string manifestCsv = "";
 
-    [Header("분포 진단 (Diagnose Manifest Distribution)")]
-    [Tooltip("PlacementAgent 의 pipeWidthBudget 과 동일하게 유지 — 학습 분포를 그대로 재현하려면 필수")]
-    [Range(0.3f, 1f)] public float pipeWidthBudget = 0.7f;
-    [Tooltip("진단 시 샘플링할 manifest 개수 (많을수록 안정)")]
-    public int diagSamples = 5000;
-
-    [Header("A안: 게이팅 풀 생성 (Generate Gated Manifest Pool)")]
-    [Tooltip("생성할 '교사 완주 가능' manifest 개수 (PlacementAgent 가 리셋마다 여기서 뽑음)")]
-    public int poolSize = 5000;
-    [Tooltip("Assets/Data/ 하위 저장 파일명 — PlacementAgent.gatedPoolFileName 과 일치시킬 것")]
-    public string poolFileName = "gated_manifests.txt";
+    [Header("저장 (Save Layout JSON)")]
+    [Tooltip("Assets/ 기준 하위 폴더")]
+    public string outputSubdir = "Data/Cases_binpack";
+    public string outputName = "boxpack001";
 
     [Header("표시")]
-    [Tooltip("표시 배율 (트레이가 21×61cm로 작아서 키워서 봄)")]
     public float displayScale = 10f;
     public bool autoCamera = true;
-    [Tooltip("격자선 표시 (1cm 격자는 빽빽함 — 거슬리면 끄기)")]
     public bool showGrid = true;
     public bool showCoG = true;
 
@@ -59,16 +46,12 @@ public class BinPackerVisualizer : MonoBehaviour
     private GameObject cogBall, cogStem;
     private BinPacker packer;
     private RewardCalculator reward;
-    private List<CargoType> pool;
+    private List<BinPacker.Placement> lastPlaced = new List<BinPacker.Placement>();
 
     void Start()
     {
-        if (seed != 0) Random.InitState(seed);
-
         packer = new BinPacker(ruleConfig, rewardConfig, cols, rows);
         reward = new RewardCalculator(rewardConfig, ruleConfig);
-        pool = LoadPool();
-        if (pool.Count == 0) { Debug.LogError("[BinPackerViz] 사용 가능한 화물 풀이 비었음"); return; }
 
         var go = new GameObject("BinPackerViz_Root");
         root = go.transform;
@@ -86,181 +69,33 @@ public class BinPackerVisualizer : MonoBehaviour
         PackAndShow();
     }
 
-    private List<CargoType> LoadPool()
-    {
-        var cat = new Dictionary<string, CargoType>();
-        foreach (var t in CargoCatalog.CreateDefault()) if (t != null) cat[t.id] = t;
-        var list = new List<CargoType>();
-        if (usableTypeIds != null && usableTypeIds.Length > 0)
-        {
-            foreach (var id in usableTypeIds) if (cat.TryGetValue(id, out var t)) list.Add(t);
-        }
-        else foreach (var t in cat.Values) list.Add(t);
-        return list;
-    }
-
-    [ContextMenu("Repack (새 manifest)")]
+    [ContextMenu("Repack (manifest 다시)")]
     public void Repack()
     {
         if (!Application.isPlaying) { Debug.LogWarning("[BinPackerViz] Play 모드에서 실행하세요"); return; }
         PackAndShow();
     }
 
-    // ── A안: 게이팅 manifest 풀 생성 ──────────────────────────────────────────
-    // '교사(빈패커) 완주 가능' manifest 만 골라 Assets/Data/<poolFileName> 에 저장 → PlacementAgent 가 리셋마다 뽑음.
-    // 리셋당 Pack 0회(timeout 없음) + 데모(+0.867)와 동일한 게이팅 분포 → BC 정합.
-    // ⚠️ manifestMin/Max = 학습과 동일한 3~5 로 맞춘 뒤 실행. Play 안 눌러도 됨. 인스펙터 우클릭.
-    [ContextMenu("Generate Gated Manifest Pool")]
-    public void GenerateGatedManifestPool()
+    [ContextMenu("Save Layout JSON")]
+    public void SaveLayoutJson()
     {
-        if (seed != 0) Random.InitState(seed);
-        var genPool = LoadPool();
-        if (genPool.Count == 0) { Debug.LogError("[게이팅풀] 사용 가능한 화물 풀이 비었음"); return; }
-
-        var packer = new BinPacker(ruleConfig, rewardConfig, cols, rows) { mode = packMode };
-        var lines = new List<string>(poolSize);
-        int attempts = 0, maxAttempts = Mathf.Max(poolSize * 500, 100000);
-
-        while (lines.Count < poolSize && attempts < maxAttempts)
-        {
-            attempts++;
-            int n = Random.Range(manifestMin, manifestMax + 1);
-            var manifest = new List<CargoType>(n);
-            for (int k = 0; k < n; k++) manifest.Add(genPool[Random.Range(0, genPool.Count)]);
-
-            if (!ManifestRealistic(manifest)) continue;             // ② 현실성
-            var unplaced = new List<CargoType>();
-            packer.Pack(manifest, unplaced);
-            if (unplaced.Count != 0) continue;                      // 교사 완주 불가 → 버림
-
-            var ids = new string[manifest.Count];
-            for (int k = 0; k < manifest.Count; k++) ids[k] = manifest[k].id;
-            lines.Add(string.Join(",", ids));
-        }
-
-        string dir = Path.Combine(Application.dataPath, "Data");
+        if (lastPlaced == null || lastPlaced.Count == 0) { Debug.LogWarning("[BinPackerViz] 저장할 배치가 없음 (먼저 Play/Repack)"); return; }
+        string dir = Path.Combine(Application.dataPath, outputSubdir);
         Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, poolFileName);
-        File.WriteAllLines(path, lines);
-
-        string warn = (manifestMin != 3 || manifestMax != 5)
-            ? $"\n⚠️ manifest {manifestMin}~{manifestMax} 는 학습(3~5)과 다름! 3/5 로 맞춰 다시 생성하세요."
-            : "";
-        Debug.Log($"[게이팅풀] {lines.Count}/{poolSize}개 생성 (시도 {attempts}회, 채택률 {100f * lines.Count / Mathf.Max(1, attempts):F1}%) → {path}{warn}");
+        string path = Path.Combine(dir, outputName + ".json");
+        var file = new CargoLayoutFile
+        {
+            version = 1,
+            bed = new CargoLayoutBed { widthX = ruleConfig.trayLateralM, lengthZ = ruleConfig.trayLengthM, wallHeight = 0.06f },
+            cargo = new List<CargoLayoutEntry>()
+        };
+        foreach (var p in lastPlaced)
+            file.cargo.Add(new CargoLayoutEntry { type = p.type.name, localPos = p.center, localEuler = p.euler, secured = true });
+        File.WriteAllText(path, JsonUtility.ToJson(file, true));
+        Debug.Log($"[BinPackerViz] 레이아웃 저장: {lastPlaced.Count}개 → {path}");
 #if UNITY_EDITOR
         UnityEditor.AssetDatabase.Refresh();
 #endif
-    }
-
-    // ── 분포 진단 ────────────────────────────────────────────────────────────
-    // 학습(게이팅 OFF)의 manifest 분포에서 "교사조차 못 이기는 에피소드"가 얼마나 되는지 측정.
-    // PlacementAgent.OnEpisodeBegin 의 샘플링(ManifestRealistic ②, 게이팅 없음)을 그대로 재현해
-    //   ① ManifestRealistic 통과율, ② 통과분포에서 교사 완주율 p,
-    //   ③ 에이전트 천장 추정 = p·(완주 시 Final) + (1−p)·(−1.5 fail-out),
-    //   ④ 비교용 raw(필터 없음) 완주율, ⑤ 미완주 지배 사유 를 출력.
-    // ⚠️ manifestMin/Max 를 학습과 동일한 3~5 로 맞춰야 유효하다(이 씬 기본은 시각화용 8~50).
-    // 표시(Start)와 무관하게 자체 packer/pool 을 만들어 계산하므로 Play 안 눌러도 됨.
-    // 인스펙터 우클릭 "Diagnose Manifest Distribution".
-    [ContextMenu("Diagnose Manifest Distribution")]
-    public void DiagnoseManifestDistribution()
-    {
-        if (seed != 0) Random.InitState(seed);
-        var diagPool = LoadPool();
-        if (diagPool.Count == 0) { Debug.LogError("[분포진단] 사용 가능한 화물 풀이 비었음"); return; }
-
-        var diagPacker = new BinPacker(ruleConfig, rewardConfig, cols, rows) { mode = packMode };
-        var diagReward = new RewardCalculator(rewardConfig, ruleConfig);
-
-        int realisticPass = 0;      // ManifestRealistic 통과 수
-        int fullGated = 0;          // 통과분포 중 교사 완주 수
-        float sumFinalFull = 0f;    // 완주 시 Final 보상 합
-        float sumAgentCeil = 0f;    // 에이전트 천장 추정 합 (완주=Final, 미완주=−1.5)
-        int rawFull = 0;            // 비교용: 필터 없이 교사 완주 수
-        var reasonAgg = new Dictionary<string, int>();  // 미완주 지배 사유(통과분포 기준)
-
-        const float FAIL_OUT = -1.5f;   // PlacementAgent.Fail: 20×(−0.05) + (−0.5)
-
-        for (int i = 0; i < diagSamples; i++)
-        {
-            int n = Random.Range(manifestMin, manifestMax + 1);
-            var manifest = new List<CargoType>(n);
-            for (int k = 0; k < n; k++) manifest.Add(diagPool[Random.Range(0, diagPool.Count)]);
-
-            // 비교용 raw (필터 없음)
-            var upRaw = new List<CargoType>();
-            diagPacker.Pack(manifest, upRaw);
-            if (upRaw.Count == 0) rawFull++;
-
-            // ② ManifestRealistic 필터 (학습과 동일)
-            if (!ManifestRealistic(manifest)) continue;
-            realisticPass++;
-
-            var unplaced = new List<CargoType>();
-            var reasons = new List<BinPacker.UnplacedReason>();
-            var placed = diagPacker.Pack(manifest, unplaced, reasons);
-
-            if (unplaced.Count == 0)
-            {
-                fullGated++;
-                float rf = FinalReward(diagReward, placed);
-                sumFinalFull += rf;
-                sumAgentCeil += rf;          // 완주 → 에이전트도 이 보상 도달 가능
-            }
-            else
-            {
-                foreach (var rr in reasons) { reasonAgg.TryGetValue(rr.dominant, out int c); reasonAgg[rr.dominant] = c + 1; }
-                sumAgentCeil += FAIL_OUT;    // 미완주 → 에이전트는 fail-out 바닥
-            }
-        }
-
-        float realisticRate = 100f * realisticPass / Mathf.Max(1, diagSamples);
-        float pFull = realisticPass > 0 ? 100f * fullGated / realisticPass : 0f;
-        float meanFinalFull = fullGated > 0 ? sumFinalFull / fullGated : 0f;
-        float agentCeil = realisticPass > 0 ? sumAgentCeil / realisticPass : 0f;
-        float rawRate = 100f * rawFull / Mathf.Max(1, diagSamples);
-
-        var rs = new System.Text.StringBuilder();
-        foreach (var kv in reasonAgg) rs.Append($"{kv.Key}×{kv.Value} · ");
-
-        string warn = (manifestMin != 3 || manifestMax != 5)
-            ? $"\n⚠️ 주의: manifest {manifestMin}~{manifestMax} 는 학습(3~5)과 다름! 3/5 로 맞춘 뒤 다시 돌리세요."
-            : "";
-
-        Debug.Log(
-            $"[분포진단] 샘플 {diagSamples}개 (manifest {manifestMin}~{manifestMax}, 풀 {diagPool.Count}종, mode={packMode})\n" +
-            $"① ManifestRealistic 통과율: {realisticRate:F1}% ({realisticPass}/{diagSamples})\n" +
-            $"② 통과분포에서 교사 완주율 p: {pFull:F1}% ({fullGated}/{realisticPass}) — 완주 시 평균 Final {meanFinalFull:F3}\n" +
-            $"③ ★에이전트 천장 추정: {agentCeil:F3}  = p·(Final) + (1−p)·(−1.5)\n" +
-            $"④ (비교) 필터 없는 raw 완주율: {rawRate:F1}%\n" +
-            $"⑤ 미완주 지배 사유: {(reasonAgg.Count > 0 ? rs.ToString().TrimEnd(' ', '·') : "없음(전부 완주)")}\n" +
-            $"해석: ③이 −1.5 근처면 = 못 이길 문제가 많아 천장이 낮음 → A안(게이팅) 타당. " +
-            $"③이 +0.5~0.7 근처면 = 문제는 멀쩡, 현재 −1.5는 1281셀 미학습 → A안 무의미(다른 처방)." +
-            warn
-        );
-    }
-
-    /// <summary>PlacementAgent.ManifestRealistic 과 동일한 ② 현실성 제약(질량합·파이프폭합).</summary>
-    private bool ManifestRealistic(List<CargoType> m)
-    {
-        float mass = 0f, pipeWidth = 0f;
-        foreach (var t in m)
-        {
-            if (t == null) continue;
-            mass += t.massKg;
-            if (t.shape == CargoShape.Pipe) pipeWidth += t.sizeM.x;
-        }
-        if (mass > ruleConfig.maxPayloadKg + 1e-4f) return false;
-        if (pipeWidth > ruleConfig.trayLateralM * pipeWidthBudget + 1e-4f) return false;
-        return true;
-    }
-
-    private float FinalReward(RewardCalculator rc, List<BinPacker.Placement> placed)
-    {
-        if (placed == null || placed.Count == 0) return 0f;
-        var items = new List<RuleChecker.PlacedItem>(placed.Count);
-        foreach (var p in placed)
-            items.Add(new RuleChecker.PlacedItem { type = p.type, center = p.center, halfSize = p.halfSize });
-        return rc.Final(items).total;
     }
 
     // ── 패킹 실행 + 화물 그리기 ─────────────────────────────────
@@ -268,19 +103,16 @@ public class BinPackerVisualizer : MonoBehaviour
     {
         packer.mode = packMode;   // 인스펙터에서 바꾸고 Repack하면 즉시 반영
 
-        // 이전 화물 지우기
         for (int i = cargoRoot.childCount - 1; i >= 0; i--) Destroy(cargoRoot.GetChild(i).gameObject);
 
-        // 랜덤 manifest
-        int n = Random.Range(manifestMin, manifestMax + 1);
-        var manifest = new List<CargoType>();
-        for (int k = 0; k < n; k++) manifest.Add(pool[Random.Range(0, pool.Count)]);
+        var manifestList = CargoManifest.Resolve(manifest, manifestCsv, out string src);
+        if (manifestList.Count == 0) { Debug.LogWarning($"[BinPackerViz] manifest 비었음 (source={src})"); return; }
 
         var unplaced = new List<CargoType>();
         var reasons = new List<BinPacker.UnplacedReason>();
-        var placed = packer.Pack(manifest, unplaced, reasons);
+        var placed = packer.Pack(manifestList, unplaced, reasons);
+        lastPlaced = placed;
 
-        // 그리기 (PlacementVisualizer와 동일: wrap 회전 + CargoFactory 실물 모양)
         var items = new List<RuleChecker.PlacedItem>();
         foreach (var p in placed)
         {
@@ -298,30 +130,35 @@ public class BinPackerVisualizer : MonoBehaviour
 
         if (showCoG) UpdateCoG(items);
 
-        // 통계 로그
+        // 통계: 부피 점유율(순수 BPP 핵심 지표) + 미적재 사유
+        float fillPct = FillPercent(items);
         var r = items.Count > 0 ? reward.Final(items) : default;
         var sb = new StringBuilder();
-        sb.Append($"[BinPackerViz:{packMode}] manifest {n}개 → 배치 {placed.Count}개");
+        sb.Append($"[BinPackerViz:{packMode}] manifest {manifestList.Count}개(src={src}) → 배치 {placed.Count}개 · 부피점유 {fillPct:F1}%");
         if (unplaced.Count > 0)
         {
-            // 사유별 집계 (예: "미적재 41 → H1 과적(>7kg)×39 · H3 화물 겹침×2")
             var byReason = new Dictionary<string, int>();
             foreach (var ur in reasons) { byReason.TryGetValue(ur.dominant, out int c); byReason[ur.dominant] = c + 1; }
             sb.Append($" (미적재 {unplaced.Count} → ");
             bool first = true;
-            foreach (var kv in byReason)
-            {
-                if (!first) sb.Append(" · ");
-                sb.Append($"{kv.Key}×{kv.Value}");
-                first = false;
-            }
+            foreach (var kv in byReason) { if (!first) sb.Append(" · "); sb.Append($"{kv.Key}×{kv.Value}"); first = false; }
             sb.Append(")");
         }
         if (items.Count > 0) sb.Append($" | {r}");
         Debug.Log(sb.ToString());
     }
 
-    // ── 적재함 (바닥 + 외곽 + 격자 + 27cm 한도) ─────────────────
+    /// <summary>배치 화물 총부피 / 트레이 내부부피 (%). 순수 BPP "꽉 채우기" 지표.</summary>
+    private float FillPercent(List<RuleChecker.PlacedItem> items)
+    {
+        float trayVol = ruleConfig.trayLateralM * ruleConfig.trayLengthM * ruleConfig.heightLimitM;
+        if (trayVol < 1e-9f) return 0f;
+        float used = 0f;
+        foreach (var p in items) used += (p.halfSize.x * 2f) * (p.halfSize.y * 2f) * (p.halfSize.z * 2f);
+        return 100f * used / trayVol;
+    }
+
+    // ── 적재함 (바닥 + 외곽 + 격자 + 높이 한도) ─────────────────
     private void BuildTray()
     {
         float lx = ruleConfig.trayLateralM, lz = ruleConfig.trayLengthM;
@@ -365,7 +202,7 @@ public class BinPackerVisualizer : MonoBehaviour
             MakeLines("TrayGrid", g, new Color(1f, 1f, 1f, 0.25f));
         }
 
-        // 27cm 한도: 반투명 빨간 천장 + 상단 테두리
+        // 높이 한도: 반투명 빨간 천장 + 상단 테두리
         float topY = fy + hy;
         var ceil = GameObject.CreatePrimitive(PrimitiveType.Cube);
         ceil.name = "HeightLimitPlane";

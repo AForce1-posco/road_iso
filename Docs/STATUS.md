@@ -2,7 +2,9 @@
 
 > **이 파일부터 읽으세요.** 채팅/세션이 바뀌어도 이 한 장이면 "지금 어디까지 왔고, 무엇을 하는 중이고, 다음에 뭘 하면 되는지"를 파악할 수 있게 유지한다.
 > 세부는 각 전문 문서로 링크. **코드가 항상 최종 진실**(문서와 코드가 다르면 코드 우선, 그리고 이 문서를 고칠 것).
-> 최종 갱신: **2026-07-06 (오후, S4 탐색벽 진단)**.
+> 최종 갱신: **2026-07-06 (오후, 순수 BPP 최소사이클 분기)**.
+
+> ⚠️ **브랜치 주의**: 현재 작업 브랜치 = **`minimal-cycle-boxes`** (순수 3D BPP 최소 사이클 = **§3b**). RL 탐색벽/Option C 작업은 **`3dbpp` 브랜치에 커밋(29e167b) 보존** — 아래 §3(RL)은 그 맥락. 복귀 `git checkout 3dbpp`.
 
 ---
 
@@ -91,6 +93,25 @@
 - ▶ **실행**: Unity 컴파일 후, 학습 설정 그대로(guaranteedCompletion 기본 ON, binPackerHeuristic✗·verboseLog✗·Record✗·useGatedPool✓·Default) → `mlagents-learn Docs/rl_config.yaml --run-id=placement_v6_optC --force`.
   - 체크포인트: **Mean Reward 양수로 출발 + 붕괴 없음**(±0.6~0.9대), 이후 교사(+0.7)를 **넘는지**.
 - 안 되면(양수지만 교사 못 넘음) → §4b-A 진짜 Refinement(이동 연산) 또는 마스킹 강화.
+
+---
+
+## 3b. 🟢 (브랜치 `minimal-cycle-boxes`) 순수 3D BPP 최소 사이클
+
+**목표**: 파이프라인 전체(패킹→동적→PPO)를 **박스만으로 최소 규모 한 바퀴** 굴려 인터페이스 검증 + RL 학습가능성 확인. RL 완성이 아니라 **관통(vertical slice)**.
+
+**단순화**: 화물=박스 중심(파이프/포대/코일 제외), 격자 2cm(341), 순수 **Dense** 빈패킹(안정성 없음, 공간만). 7kg 한도 유지 + 가벼운 합성 박스로 부피 채움.
+
+**구현 완료 (2026-07-06)**:
+- **카탈로그 SYN 6종**(`cargo_catalog.csv`): SYN-01~06(저밀도 합성 박스). 실측 박스는 무거워 7kg에서 부피 못 채움 → SYN으로 "꽉 채운 버전" 관측.
+- **`CargoManifest.cs`**: 인스펙터 (id,개수) 목록 / CSV → 화물 리스트.
+- **`BinPackerVisualizer`·`BinPackerRunner` 정리**: 랜덤·게이팅풀·진단 제거 → **manifest 지정 → Dense pack → 부피점유율(%) 표시 → JSON 저장**.
+
+**▶ 다음 액션**:
+1. `3D BPP` 씬 `BinPackerVisualizer`: 인스펙터 `manifest`에 (예: SYN-01×5, SYN-03×8) 채우고 `packMode=Dense` → Play/우클릭 "Repack" → **부피점유율↑** 확인.
+2. 우클릭 **"Save Layout JSON"** → `Assets/Data/Cases_binpack/<name>.json`.
+3. (이후) 그 레이아웃 **동적 주행**(DynamicSceneController) → results.csv.
+4. (이후) **PPO** — 박스 풀 + Option C(3dbpp에 있음)로 학습. ※ RL은 3dbpp 브랜치 자산이라, 이 브랜치에서 RL까지 가려면 병합 전략 별도 결정.
 
 ---
 

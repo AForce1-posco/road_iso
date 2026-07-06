@@ -89,11 +89,15 @@ Score(placed, 후보) = RewardCalculator.Final(placed + 후보).total
   - ✅ **demo 정합 완료**: manifest 게이팅+현실성 제약(`RL_Applied_Spec.md` §6) 적용 후 재기록 **Mean Reward +0.867** 합격. A안 게이팅 풀도 구현(`GenerateGatedManifestPool`).
   - ⚠️ **그 뒤 학습 정체 (미해결)**: BC 워밍스타트(v2_bc)·게이팅풀(v3_gated) 모두 **−1.5 정체(std 0, 매 에피소드 fail-out)**. 원인 = **1281셀 탐색 벽**(빈패커 문제 아님, RL 행동공간 문제). → 격자 완화+GAIL로 대응. 상세 = **STATUS §3 / WORKLOG 2026-07-06 / RL_Applied_Spec §10**.
 
-## 7. 사용 (Phase 1)
+## 7. 사용 (순수 BPP, `minimal-cycle-boxes` 브랜치 기준)
 
-1. 빈 GameObject에 **BinPackerRunner** 추가.
-2. `numCases`(예 100), `manifestMin/Max`(3~5), `usableTypeIds`(RL과 동일 12종) 설정.
-3. 인스펙터 우클릭 **Run BinPacker** (또는 runOnStart) → `Assets/Data/Cases_binpack/binpackNNN.json` 생성 + 콘솔에 배치성공률·평균보상.
+**입력 = manifest 지정** (`CargoManifest.cs`): 인스펙터 `manifest` 목록 — 각 줄이 **[카탈로그 화물 드롭다운] [개수]** (`Editor/ManifestEntryDrawer.cs` 로 id 타이핑 대신 목록 선택). 또는 `manifestCsv`(Assets/ 상대경로, 한 줄 "id,개수"). CSV에 화물 추가 후 드롭다운이 안 바뀌면 메뉴 **Tools ▸ BinPacker ▸ Refresh Cargo Dropdown**. 랜덤 생성·게이팅풀·분포진단은 이 브랜치에서 제거됨.
+
+- **BinPackerVisualizer** (화면): `manifest` 채우고 `packMode=Dense` → Play/우클릭 **"Repack"** → 트레이·화물 표시 + 콘솔에 **부피점유율(%)**. 우클릭 **"Save Layout JSON"** → `Assets/Data/<outputSubdir>/<outputName>.json`.
+- **BinPackerRunner** (화면 없이): 동일 manifest 입력 → 우클릭 **"Run BinPacker (Pack manifest)"** → JSON 1개 저장 + 부피점유율·Final 로그.
+- **합성 화물 SYN-01~06** (`cargo_catalog.csv`): 저밀도 박스 → 7kg 한도 안에서 공간을 꽉 채우는 테스트용.
+
+> 참고: 예전 랜덤 batch(`numCases`)·게이팅풀 생성·분포진단은 **RL 지원 기능**이라 `3dbpp` 브랜치에 있음(이 브랜치에선 제거).
 
 ## 8. 한계 (정직)
 

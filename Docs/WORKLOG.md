@@ -128,6 +128,22 @@
   - **효과**: 보상이 항상 유효 완성배치(≈+0.6~0.9) → **std>0 보장 → 붕괴 불가.** 바닥 = 빈패커 +0.7, 잘 배우면 그 위로. 데모/BC/GAIL·행동공간 불변 → **재기록 불필요.**
 - **다음**: `--run-id=placement_v6_optC --force`. 양수 출발·무붕괴·교사 초과 여부 관찰. 안 되면 §4b-A 진짜 Refinement.
 
+## 2026-07-06 (오후 6) — 브랜치 분기: 순수 3D BPP 최소 사이클 (박스만)
+
+- **전략 전환(사용자)**: RL 탐색벽/붕괴가 반복(v2~v6) → 파이프라인 전체를 **최소 수직 슬라이스**로 먼저 관통하기로. `3dbpp`에 RL/Option C 커밋(29e167b) 체크포인트 후 **`minimal-cycle-boxes` 브랜치 분기**. RL은 3dbpp에 보존(휴면), 복귀 `git checkout 3dbpp`. (큰 산출물 데모112MB·results439MB는 커밋 제외 + .gitignore 추가)
+- **이 브랜치 목표**: "내가 manifest 지정 → 순수 Dense 3D BPP로 공간 꽉 채우기" 를 RL 잡동사니 없이 깨끗하게. 안정성·CoG 최적화 없음, **공간만**.
+- **결정**:
+  - 화물 = 박스 중심(파이프/포대/코일 제외 → H5/H6/H7/H10·rot0 안 씀).
+  - **7kg 적재한도 유지**(현실적) — 대신 가벼운 합성 박스 추가로 부피 채우기 가능케. (통념상 고전 BPP는 무게 무시하나, 이 프로젝트는 현실 적재라 유지.)
+  - 입력 = 인스펙터 (id,개수) 목록 + CSV(Assets/ 상대경로, "id,개수"). JSON manifest는 안 씀(출력이 JSON이라 혼동).
+  - PlacementAgent·rl_config는 **그대로 둠**(휴면).
+- **구현**:
+  - **카탈로그 SYN 6종 추가**(`cargo_catalog.csv`): SYN-01~06(큰경량·중경량·틈새소형·납작패널·표준큐브·작고무거움). **이유**: 실측 박스는 밀도 높아 7kg에서 부피를 못 채움(채우려면 ~55kg 필요) → 저밀도 합성박스(예 SYN-01 5400cm³·0.2kg)로 **"꽉 채운 버전" 관측 가능**. Unity라 비현실 케이스도 테스트.
+  - **`CargoManifest.cs`(신규)**: 인스펙터 `ManifestEntry[]`/CSV → CargoType 리스트 전개.
+  - **`BinPackerVisualizer` 정리**: 랜덤 manifest·게이팅풀 생성·분포진단·ManifestRealistic 전부 제거 → manifest 지정 + **Dense 기본** + **부피점유율(%) 표시** + "Save Layout JSON".
+  - **`BinPackerRunner` 정리**: 랜덤 배치 제거 → manifest 지정 → Dense pack → JSON 1개 저장 + 부피점유율 로그.
+- **다음**: 3D BPP 씬 BinPackerVisualizer에 manifest 채우고 packMode=Dense → Play/Repack(부피점유율↑ 확인) → Save Layout JSON → (이후) 동적 주행 → PPO.
+
 ---
 
 _(새 항목은 이 아래에 추가)_
