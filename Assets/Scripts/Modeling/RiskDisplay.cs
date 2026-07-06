@@ -3,6 +3,7 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody))]
 public class RiskDisplay : MonoBehaviour
 {
+    
     [Header("참조 (비우면 자동 검색)")]
     public VehicleController vehicle;
     public RiskModel riskModel;
