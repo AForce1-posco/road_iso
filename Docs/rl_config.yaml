@@ -6,9 +6,9 @@
 #       → "Start training..." 뜨면 Unity에서 RLTraining 씬 Play
 #       (Behavior Type 을 Heuristic Only → Default 로 바꿔야 트레이너와 연결됨)
 #
-# 스펙: 관측 114 (높이맵96 + CoG3 + 질량1 + 편차2 + 종류12)
-#       이산행동 3브랜치 (종류12 · 셀96 · 회전2)
-#       에피소드 = 화물 3~5개 배치 (커리큘럼 1단계, 짧음)
+# 스펙: 관측 359 (높이맵341[11x31, 2cm급격자] + CoG3 + 질량1 + 편차2 + 종류12)
+#       이산행동 3브랜치 (종류12 · 셀341 · 회전2)  — 2026-07-06 격자 1cm→2cm (1281셀 탐색벽 완화. 이전 onnx 비호환)
+#       에피소드 = 화물 3~5개 배치 (커리큘럼 1단계, 짧음). obs/action은 코드가 cols/rows로 자동 산정
 #
 # 알고리즘 교체: trainer_type 을 ppo → sac 로 바꾸면 SAC 실험 (환경 재작업 불필요).
 #              마스킹은 ml-agents PPO/SAC 가 네이티브 지원(= Maskable PPO 기본 탑재).
@@ -22,13 +22,13 @@ behaviors:
       buffer_size: 2048             # batch_size 의 배수 (2048 / 128 = 16)
       learning_rate: 3.0e-4
       learning_rate_schedule: linear
-      beta: 5.0e-3                  # 엔트로피 계수 = 탐색량. 이산 다브랜치라 중요
+      beta: 2.0e-2                  # 0.005→0.02 (2026-07-06): 엔트로피↑ = 정책 붕괴(std 0.5→0) 방지
       epsilon: 0.2                  # PPO clip
       lambd: 0.95                   # GAE lambda
       num_epoch: 3
 
     network_settings:
-      hidden_units: 256             # 관측 114 → 256
+      hidden_units: 512             # 관측 359 · 행동 341 (2026-07-06 격자 2cm). 여유 있어 유지
       num_layers: 2
       normalize: true               # 관측 스케일 제각각(높이맵/질량/개수) → 정규화 ON
       vis_encode_type: simple
@@ -37,6 +37,21 @@ behaviors:
       extrinsic:
         gamma: 0.99
         strength: 1.0
+      # GAIL (2026-07-06 활성화): 데모처럼 보이면 매 스텝 보상 → 균일 −1.5(그래디언트 0) 정체를 깸.
+      gail:
+        gamma: 0.99
+        strength: 0.8                # 0.3→0.8 (2026-07-06): 빈 트레이 붕괴 방지 위해 밀도 보상 강화
+        demo_path: Assets/Demonstrations/PlacementAgentDe.demo
+
+    # ── Phase 2: BC 워밍스타트 ──────────────────────────────────────────────
+    # 빈패커(Stable) 시연(.demo)을 모방하며 출발 → 1cm 격자(1281셀) 콜드스타트 회피.
+    # 사전 조건: RLTraining 씬에서 Demonstration Recorder 로 .demo 를 먼저 기록해야 함!
+    #   (PlacementAgent 오브젝트: binPackerHeuristic ✓ · Behavior Type=Heuristic Only ·
+    #    Demonstration Recorder [Record ✓, Name=PlacementAgentDemo] → Play 수 분 → 정지)
+    behavioral_cloning:
+      demo_path: Assets/Demonstrations/PlacementAgentDe.demo
+      strength: 1.0                 # 0.5→1.0 (2026-07-06): 탐색 벽에 견인력 강화
+      steps: 200000                 # 이 스텝까지 BC 유지 후 점차 소멸 → 이후 순수 RL 최적화
 
     max_steps: 500000               # 1단계 기준선. 곡선 보며 늘림
     time_horizon: 64                # 에피소드가 짧아 작게

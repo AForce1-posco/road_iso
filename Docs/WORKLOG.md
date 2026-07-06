@@ -1,0 +1,133 @@
+# 📓 작업 일지 (WORKLOG) — road_iso / CargoRiskSimulation
+
+> **날짜순 "언제 뭘 했고, 왜 그렇게 결정했고, 뭘 겪었나" 기록.**
+> "지금 상황·다음 액션"은 `STATUS.md`, 스펙은 `RL_Applied_Spec.md`가 담당 — 이 파일은 **역사**를 담당한다.
+> 규칙: 작업 세션이 끝날 때마다 아래에 항목 추가(최신이 아래). 결정에는 반드시 **이유**를 남길 것.
+
+---
+
+## 2026-07-01 — 정적/동적 씬 MVP (구 CargoRiskSimulation)
+
+- **정적 씬 MVP**: 물리 기반 자유 배치(격자 스냅 없음), 바구니형 트레이, 배치/제거/회전/고정 토글, 대시보드(총중량·LTR·CoG·4점하중), CoG 마커·안전영역 시각화.
+- **동적 씬 MVP 코드**: "평가자" 역할 — 정적 배치(json)를 트럭에 싣고 급선회 주행 → Roll/LTR/화물이동/전복 측정 → CSV. 공용 코어(`CargoFactory`·`CargoLayoutIO`)를 Common으로 추출(정적/동적 단일 소스).
+
+## 2026-07-02 — ⚠️ 메인 개발처를 road_iso로 이전
+
+- **결정**: 메인을 `unity/roadTest/road_iso`(Unity 2020.3.48f1, Built-in RP)로 이전. **이유**: road_iso의 트랙(RoadArchitect 도로+ISO 경로+PurePursuit 주행+DataLogger)이 완성형. 구 프로젝트의 EasyRoads 동적 씬은 폐기.
+- 정적 씬 재작성(Common+Static 스크립트, `StaticSceneSetup` 원클릭 부트스트랩). 2020.3 함정: `rb.velocity`, 구 Input, Arial.ttf, URP 셰이더→Standard 폴백.
+
+## 2026-07-03 — 동적 파이프라인 구축
+
+- `CargoBedLoader`(json→적재, FixedJoint/자유해제, massScale 100) + `CargoRiskRecorder`(Roll·횡G·4륜 LTR·화물이동·전복→results.csv+HUD) + `DynamicSceneController`(Cases 폴더 전체 루프 오케스트레이션).
+- 물리 정확도: timestep 0.01(100Hz), maxDepenetrationVelocity 2, CargoGrip 마찰재. 질량비 1:100 초과 시 관통(솔버 한계) 확인.
+- 경로 중앙화 `CargoPaths`, 화물 스펙 CSV화(`Assets/Data/cargo_catalog.csv`).
+
+## 2026-07-04~05 — 실측 반영 · RL 설계 · S1~S4 (대형 마일스톤)
+
+- **실측 화물 16종** 반영(`적재물데이터.xlsx`), **"톤백"→"포대" 전면 개명**(코드·CSV·케이스 JSON — CargoBedLoader가 이름 매칭이라 JSON까지 함께).
+- **적재함 확정: 안쪽 61(z)×21(x)×27(y) cm** (길이 62→61 정정, 전 구성요소 반영). 축 매핑: x=좌우/y=높이/z=주행.
+- **캘리브레이션 도구** `CalibrationRunner`(로드셀 실측 CoG vs 계산 비교→CSV).
+- **RL 설계 문서** `RL_StaticPlacement_Design.md`(MDP·규제·보상 LE0.5/CGS0.4/SS0.1·DOE). 규칙 원본 = Hard_Constraint/Reward_Design docx + 손글씨.
+- **S1** `RuleChecker`(Hard 9규칙, H11/H12는 사용자 결정으로 제거 — 해석충돌/비구속) + 테스트 10시나리오.
+- **S2** `RewardCalculator`(LE/CGS/SS 0~1 정규화 가중합 + Step shaping) + 검증(좋은배치 0.65 > 나쁜배치 0.54).
+- **S3** `PlacementAgent`(관측=높이맵+CoG+질량+편차+남은수, 행동 3브랜치, 마스킹). ⚠️ 함정 2개 해결: 중복 베이스 Agent 컴포넌트 제거 / **ActionSpec은 Awake()에서 세팅**(ML-Agents 2.0.2 LazyInitialize 순서상 Initialize()는 늦음 → "Action Mask too large").
+- **S4 PPO 1차 학습**: env `mlagents-x86`(Rosetta x86_64+py3.9.13+torch1.8.1, cattrs 패치 필수 — 레시피 `RL_Env_Setup.md`). **Mean Reward −1.67→−0.36 (우상향, 미수렴)** — 4cm 격자(96셀) 기준.
+- **ML-Agents 패키지 2.0.2 고정 결정**: 2.2.1-exp 시도 → Barracuda 연쇄 업그레이드로 DLL 참조 깨짐 → 롤백.
+- `PlacementVisualizer` 신설(표시 전용, placed를 실물 화물 모양으로). **H2 개정**: 앞(+z, 캐빈) 오버행 금지·뒤(−z)만 파이프 허용.
+- 배치 케이스 2000개(선반패커) **파이프 방향 버그 발견·제자리 패치**(euler (90,90,0)→(90,0,0), 백업 후).
+
+## 2026-07-05 (밤) — 위험 데이터셋 재생성
+
+- **`generate_risk_cases.py` → `Cases/` 500개**(위험350: 높이초과/과적/편심 + 촘촘·CoG이상 100 + 정상 50). 예측기(파이프라인 ④) 학습용 — 하드룰 의도적 위반 허용. 옛 2000개는 `Cases_shelf2000_archive_20260705/` 백업.
+- 캘리브레이션 실행: 엑셀 17케이스 → x·y 오차 0.1~0.3cm(양호). ⚠️ 엑셀 CoG는 mm 단위(÷10 변환).
+
+## 2026-07-06 — 격자 1cm 전환 · 빈패커 · BC 워밍스타트 (진행 중 작업)
+
+- **파이프라인 큰 그림 정리**: ①빈패커→②동적주행→③피처/라벨→④위험예측기→⑤RL보상 연결→⑥RL 2차→⑦동적검증. 동적주행은 느려 RL 보상에 직접 못 씀(예측기 경유 필수).
+- **격자 4cm→1cm 전환 (사용자 확정)**: RL+빈패커 전부 21×61=**1281셀**. 관측 114→**1299**, 행동 branch1 96→**1281**. ⚠️ placement_v1 onnx 비호환 — 행동공간 13배라 **맨땅 PPO 비추 → BC 워밍스타트와 세트** 전제.
+- **빈패커 Phase 1**: `BinPacker.Pack`(그리디: RuleChecker 유효 후보 중 RewardCalculator 최고점) + `Runner`(JSON 100개) + `Visualizer`. 검증: 성공률 89%·평균보상 **0.698** (RL 1차 −0.36 대비 → BC 교사 가치 실증). PackMode Stable/Dense 추가.
+- **빈패커 Phase 2 코드**: `Decide()`(다음 한 수) + `PlacementAgent.Heuristic` 연결(`binPackerHeuristic`) + rl_config `behavioral_cloning`(strength 0.5, steps 200k) + hidden 512. 진단 도구 `DiagnoseUnplaced`/`UnplacedReason`.
+- **🔴 demo 오염 사건 → 해결**:
+  1. 1차 기록 demo(31MB→193MB) Mean Reward **−0.45** (정상 +0.6~0.7) — 이대로 BC 하면 나쁜 습관 모방.
+  2. 진단: 시연 자체는 정상(완주 시 R=0.65~0.74). **진짜 원인 = manifest 무작위 추첨이 물리적으로 못 싣는 조합을 40~50% 뽑음**(60cm 파이프 여러 개+넓은 박스 — 파이프는 전장 독점+위 적재 불가 H6). 근본 = 입력 분포가 비현실적.
+  3. **해결(코드, `OnEpisodeBegin` 재추첨 루프)**: ②현실성 제약 `ManifestRealistic`(항상: 총질량≤7kg·파이프폭합≤트레이폭×0.7) + ①게이팅(demo 녹화 시: 교사 `Pack` 완주 조합만, 최대 40회 재추첨). 게이팅 트레이드오프(분포 좁아짐)는 인지하고 채택 — BC는 교사의 성공 시연만 모방하는 게 맞음.
+  4. **재기록 합격: Mean Reward +0.867**, 29,553스텝/6,109에피소드(4.84스텝/ep = 완주 위주).
+- **문서 정비**: 핸드오프 `STATUS.md` 신설, `RL_Applied_Spec` 관측 1299 정정+§6 manifest 게이팅 문서화, `BinPacker_Design` demo명·Phase2 상태 갱신, `RL_Implementation_S1_S2` 스테일 배너, 이 `WORKLOG.md` 신설.
+- **다음**: `--run-id=placement_v2_bc` BC 워밍스타트 학습 (절차는 STATUS.md §3).
+
+## 2026-07-06 (오후) — BC 학습 착수 시 UnityTimeOutException 원인·해결
+
+- **증상**: `mlagents-learn --run-id=placement_v2_bc`가 "Listening on port 5004" 후 Unity Play → `mlagents_envs.exception.UnityTimeOutException`(첫 `_reset_env`에서 끊김). (그 직전엔 트레이너 없이 Play를 먼저 눌러 "Couldn't connect… Will perform inference instead"로 빠졌던 것 — 순서 문제).
+- **원인**: `PlacementAgent.OnEpisodeBegin`의 **게이팅 루프**. `binPackerHeuristic`이 켜져 있으면 매 리셋마다 `heuristicPacker.Pack()`(1281셀 풀 빈패킹 solve)을 **최대 `manifestMaxTries`(40)회** 재추첨하며 돎. 데모 녹화(Heuristic Only)엔 Python 타임아웃이 없어 느려도 통과했으나, 학습(Default)은 첫 리셋을 **60초 안에 응답**해야 해서 초과 → timeout.
+- **결정/해결**: **학습 시 `binPackerHeuristic` 해제**. 이유 — ① 게이팅은 데모를 깨끗이 녹화하려는 장치이고, ② Default 모드에선 `Heuristic()`이 호출조차 안 되며, ③ 현실성 제약 `ManifestRealistic`②는 `binPackerHeuristic`과 무관하게 항상 적용되어 학습 manifest 분포는 유지됨. 즉 학습에선 게이팅이 불필요한 오버헤드일 뿐.
+- **부수 정리**: 실행 순서 확정(트레이너 "Listening" 확인 후 Play), 실패한 빈 run 폴더는 `--force`로 덮어쓰기. STATUS.md §3에 "학습 전 PlacementAgent 체크리스트"(binPackerHeuristic/verboseLog/Record/Visualizer/Behavior Type) 신설.
+
+## 2026-07-06 (오후 2) — BC 학습 정체(−1.5) 원인 검증 → A안(게이팅 풀) 구현
+
+- **증상**: `placement_v2_bc`(BC 워밍스타트)가 출발 −1.45 후 **−1.5로 오히려 하강**, v1(4cm) 궤적에 붙어 안 올라감. BC가 견인 실패.
+- **코드 검증(확정)**: `PlacementAgent.Fail` = 무효 20회×(−0.05) + (−0.5) = **정확히 −1.5**. 현재 mean −1.5 = **거의 매 에피소드 fail-out**. 그리고 `ManifestRealistic`②는 질량·파이프폭만 봐서 **배치 가능성을 보장 못 함**(코드상 확실).
+- **분포 진단 도구 추가**(`BinPackerVisualizer.DiagnoseManifestDistribution`) → 학습 분포(3~5, ManifestRealistic O, 게이팅 X) 5000샘플 측정:
+  - ① ManifestRealistic 통과율 **91.1%** (싼 필터라 9%만 거름)
+  - ② 통과분포 교사 완주율 **p=59.9%** (완주 시 평균 Final 0.701) → **40%는 교사조차 완주 불가** (지배 사유 **H2 경계이탈** 압도적 = 부피 초과)
+  - ③ **에이전트 천장 추정 −0.181** = p·0.701 + (1−p)·(−1.5)
+- **결론(두 원인 동시)**: (A) 40% 완주불가 manifest가 천장을 −0.18로 눌러 fail-out 유발 + (B) 1281셀 미학습으로 그 천장에도 못 감. 결정타 = **train/demo 불일치** — 데모는 게이팅(p~100%, +0.87)인데 학습은 게이팅 없음(p=60%). BC가 못 본 40%에서 헤매다 fail-out.
+- ⚠️ **이전 오후 항목의 "학습 분포는 유지됨"은 틀렸음을 정정**: 게이팅을 빼면 분포가 바뀐다(못 싣는 조합 40% 유입). 게이팅 off는 timeout 땜질이었을 뿐, 분포 정합은 깨짐.
+- **결정/해결 = A안(오프라인 게이팅 풀)**. 이유 — 정확(교사 Pack 그 자체, 근사 아님)·타당(데모와 100% 동일 분포)·**검증됨**(+0.867 데모가 바로 이 게이팅으로 나옴). A′(ManifestRealistic에 부피상한 추가)는 프록시라 미검증·잔여 불일치로 백업.
+  - **구현**: `BinPackerVisualizer`에 `Generate Gated Manifest Pool`(완주가능 manifest N개→`Assets/Data/gated_manifests.txt`) + `PlacementAgent`에 `useGatedPool`(리셋마다 파일에서 뽑기, 파일 없으면 런타임 샘플링 폴백). 리셋당 Pack 0회 → **timeout 재발 없음** + 분포 정합. 진단은 `BinPackerRunner`가 아니라 씬에 실제로 붙은 `BinPackerVisualizer`에 넣음(3D BPP 씬 = Visualizer 단독).
+- **정직한 한계**: A안은 천장을 −0.18 → ~+0.70로 올릴 뿐, 에이전트가 1281셀에서 실제 등반하는 건 별개(B) — BC강도·스텝 추가 튜닝 여지.
+
+## 2026-07-06 (오후 3) — A안 실행 → v3_gated도 정체 → 근본원인 "1281셀 탐색벽" 확정 → 전략 재정립
+
+### 실행·관찰
+- 게이팅 풀 생성 성공: `gated_manifests.txt` 5000개, 채택률 **54.3%**(진단 예측 0.91×0.60≈55%와 일치 = 코드 정상). 길이 3/4/5 = 2130/1620/1250(완주 쉬운 3개로 쏠림), 파이프 희귀(게이팅이 파이프중 조합을 자연 탈락 — 데모와 같은 성질).
+- Play 시 `[PlacementAgent] 게이팅 풀 로드: 5000개` 확인 → **A안 정상 작동.** `mlagents-learn` startup 로그에 `behavioral_cloning: strength 0.5` → **BC도 로드 확인.**
+- **v3_gated 결과 = 정체**: `Mean Reward −1.5 · Std 0.000 · Episode Length ≈20`. 10k에선 −1.315(std 0.614)였다가 20k부터 −1.5(std 0)로 **붕괴.**
+
+### 진단(확정)
+- `Fail()` = 무효 20회×(−0.05)+(−0.5) = **정확히 −1.5**. Std 0 = **모든 에피소드가 유효 배치 0회로 fail-out**(하나라도 놓으면 step보상으로 편차 생김). Episode Length≈20 = maxInvalid 도달. → **완전 정체(collapse), 느린 학습 아님.**
+- **근본 원인 = 1cm 격자(1281셀) 행동공간.** v1(4cm=96셀)의 13배. 물리 유효면적은 같은데 칸이 13배라 **유효칸 비율 ~1/13** → 랜덤 탐색이 20번 안에 유효칸 맞힐 확률 급락(96셀 ~96% vs 1281셀 ~18%, 거친 추정) → 완주 경험 0 → 균일 −1.5 → **PPO advantage 0 → 그래디언트 0.** BC(0.5)는 1281갈래 분포를 바늘로 못 모아 무력.
+- **왜 v1은 상승했나**: 96셀이라 우연한 성공이 나와 발판 → 기어서 −1.67→−0.36(그래도 양수 미달). 즉 v1이 나은 건 "기술"이 아니라 "문제가 13배 쉬웠기 때문". **"BC/3D 더했는데 왜 더 나빠?" = 문제를 13배 키우고 그 도우미가 약했던 것.**
+- 즉 정체는 manifest 분포(A안 해결)도 보상 부재도 아님 → **순수 탐색/행동공간 문제.**
+
+### 외부 QA 리뷰(5점) 대조
+- ①BinPackerRunner 현실성필터 없음(baseline JSON이 unplaced 조용히 드롭) = 정확, S5 공정비교 때 full-pack만/원manifest 저장 필요(저우선).
+- ②BC 성공판정 = 리뷰는 "미검증"이나 실제론 **검증완료=실패**(우리가 앞서감).
+- ③회전 자유도 제한(yaw0/90·파이프rot0, pitch 없음) = 정확, "도메인 제한 packing"으로 문서화 = 의도된 설계.
+- ④**마스킹 약함**(소진종류+꽉찬셀만) = ★정확, **우리 탐색벽 원인의 정중앙.** 단 독립 3브랜치라 완벽한 유효성 마스킹은 구조상 어려움 → 종류무관 경계여백 마스킹은 가능(H2 대량 제거).
+- ⑤`Pack(Dense)`=부피내림 vs `Decide()`=항상 질량내림 = 코드로 검증, 정확. Stable 교사엔 무해, Dense를 교사/비교로 쓰면 맞춰야 함.
+
+### 전략 재정립 (사용자와 합의)
+- **목표 명확화**: 주=규칙준수 안전 정적배치(고정 주문), 부=동적 전복여부·위험예측. 안전 주·촘촘 부차. (STATUS §0 반영)
+- **역할 분담 확인**: 위험도(동적·예측기)는 **다른 담당자** → 이쪽에서 못 함. 기다리는 동안 RL을 붙듦.
+- **"지금 RL이 의미있나?" 결론**: 지금 정적보상 RL을 갈아봐야 proxy 최적화라 최종목표 아님 + 막혀있음. **BUT 탐색벽 해결은 reward-independent 인프라라, 최종 예측기-보상 RL에도 필수 → 지금 하는 게 헛되지 않음.** 단 정적 보상 가중치 미세튜닝은 헛수고(버려짐).
+- **격자 완화가 근본책인 이유**: 능력부족이 아니라 **탐색 발판** 문제. 안전적재에 1cm 정밀도 불필요 → 2cm(≈341셀)가 아마 영구적으로 옳은 해상도(임시목발 아님). 1cm 복귀는 필요할 때만 coarse→fine.
+
+### 결정 → 다음 작업
+- **격자 1cm→2cm급 완화 + GAIL 추가(strength 0.3) + BC 0.5→1.0.** run-id `placement_v4_grid2_gail`.
+- ⚠️ 격자 바꾸면 **데모·게이팅풀 재생성**(demo는 action 크기 바뀌어 비호환).
+- 룰/보상 병행 개선 원칙: **룰=도메인오류·과도제약 찾아 수정(탐색도 쉬워짐)** / 보상=가중치말고 **학습가능성 구조**(fail-out 절벽 등)만.
+- 병행: 예측기 담당자에게 입력 피처 확인(피처 일관성).
+
+## 2026-07-06 (오후 4) — 탐색벽 처방 적용: 격자 1cm→2cm + GAIL
+
+- **격자 완화 `cols=11·rows=31`(≈2cm, 341셀)** 적용: `PlacementAgent`·`BinPacker`(생성자 기본)·`BinPackerRunner`·`BinPackerVisualizer` 코드 + `RLTraining`·`3D BPP` 씬 serialized 값 전부. 홀수 선택(x=0·z=0 중앙셀 정렬). obs 359·action (12,341,2)는 `Setup()`이 cols/rows로 자동 산정.
+  - 이유: 1281셀(1cm)이 탐색벽 근원(유효칸 ~1/13, 랜덤 발판 못 잡음). 341셀(v1 96과 1281 사이)로 발판 확보. 안전 적재에 1cm 정밀도 불필요.
+- **rl_config**: `gail` 활성화(strength 0.3, demo_path 동일) + `behavioral_cloning.strength 0.5→1.0`. GAIL = 균일 −1.5(그래디언트 0)를 깨는 밀도 있는 모방보상. 상단 스펙 주석·hidden_units 주석도 359/341로 갱신.
+- ⚠️ **의존성**: 격자 바뀌어 기존 demo(action 1281)·게이팅풀 비호환 → **풀 재생성 + 데모 재기록 필수**(절차 STATUS §3). run-id `placement_v4_grid2_gail`.
+- **후보 기록**(STATUS §4b): 이걸로도 std 0이면 → A) Refinement 아키텍처(빈패커 유효배치서 시작, RL은 개선연산만 → 탐색벽 회피) / B) Dense·Stable 동적 검증 흐름(정적보상 proxy 타당성 실증). 두 축은 독립.
+- **개념 정리**(사용자 질문): 충돌 페널티는 빈패커가 아니라 **RL이 규칙을 배우는 신호**(빈패커=규칙 검사·유효만 배치 / RL=규칙 모름·페널티로 학습). 현재 무효행동은 reject+페널티(마스킹 구조적 한계).
+
+## 2026-07-06 (오후 5) — 정책 붕괴 확정 → Option C(보장된 완주) 구현
+
+- **v4(격자2cm+GAIL) 결과**: 10k Mean −1.384·**Std 0.557**(배치 중) → 20k Mean −1.5·**Std 0.000**(붕괴). v3와 동일 패턴 → **격자 완화만으론 안 됨.**
+- **v5(beta 0.005→0.02 + GAIL 0.3→0.8) 결과**: 역시 20k std 0 붕괴. → **config 튜닝 3연속 실패.**
+- **진단(확정)**: 문제는 격자 크기가 아니라 **정책 붕괴**. 10k엔 std 0.5~0.6로 화물을 놓다가, 20k까지 정책이 무효 행동으로 무너져(엔트로피 붕괴) 매 에피소드 fail-out. **근본 = fail-out −1.5 절벽**(완주 못 하면 −1.5 균일 → 그래디언트 0 → 붕괴). 재기록 데모는 +0.857로 무죄(Shapes 359·Branches [12,341,2] 정상).
+- **결정 = Option C(보장된 완주)**. 사용자 refinement 아이디어의 경량판. from-scratch·데모·행동공간 다 유지하고, **무효 행동 처리만 교체**:
+  - `OnActionReceived` 재작성: 에이전트 행동 무효 → fail-out 대신 **작은 페널티(−0.02) + `PlaceByTeacher()`(빈패커 Decide로 대신 한 수)** → 에피소드 항상 완주. 교사도 막히면 partial final − unplaced 감점(−1.5 아님).
+  - 헬퍼 `TryPlace`(에이전트/교사 공통 배치)·`PlaceByTeacher`·`CountRemaining` 추가. 필드 `guaranteedCompletion`(ON)·`invalidStepPenalty 0.02`·`unplacedPenalty 0.1`.
+  - **효과**: 보상이 항상 유효 완성배치(≈+0.6~0.9) → **std>0 보장 → 붕괴 불가.** 바닥 = 빈패커 +0.7, 잘 배우면 그 위로. 데모/BC/GAIL·행동공간 불변 → **재기록 불필요.**
+- **다음**: `--run-id=placement_v6_optC --force`. 양수 출발·무붕괴·교사 초과 여부 관찰. 안 되면 §4b-A 진짜 Refinement.
+
+---
+
+_(새 항목은 이 아래에 추가)_
