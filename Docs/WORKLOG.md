@@ -153,12 +153,27 @@
 - ⚠️ boxpack001.json(B-004×8·SYN-04×4·SYN-03×4)과 3D BPP 씬 현재 인스펙터(B-004×5·B-005×4·C-001×6)가 다름 — JSON 저장 후 인스펙터 변경한 것. **PPO fixedManifest는 JSON 내용 기준**.
 - **다음**: RLTraining 씬 PlacementAgent에 fixedManifest 채우고 → `--run-id=boxpack001_ppo`. 양수 등반·binpacker Final 초과 관찰.
 
-## 2026-07-06 (오후 8) — ✅ boxpack001 from-scratch PPO 성공 (Option C 검증)
+## 2026-07-06 (오후 8) — ✅ from-scratch PPO 성공 (Option C 검증)
 
 - **guaranteedCompletion OFF** 때: −1.85(무효 페널티 누적, MaxStep까지 헤맴). **ON으로 켜니**: Mean Reward **1.03→1.13**, Std ~0.09, **~25k에서 수렴**. 45k에서 수동 정지(Ctrl+C), onnx 저장.
-- **의미**: Option C(보장된 완주) 설계가 옳았음이 실측 검증됨(양수·붕괴 없음). **그간 붕괴 반복하던 RL이 박스 단일케이스에서 드디어 학습.** 이것이 **from-scratch baseline (v1)** = `results/boxpack001_ppo/PlacementAgent.onnx`.
+- **의미**: Option C(보장된 완주) 설계가 옳았음이 실측 검증됨(양수·붕괴 없음). **그간 붕괴 반복하던 RL이 박스 단일케이스에서 드디어 학습.** = **from-scratch baseline (v1)** = `results/boxpack001_ppo/PlacementAgent.onnx`.
+- ⚠️ **manifest 불일치 주의**: 이 run의 fixedManifest는 **B-001×8·SYN-03×4·SYN-04×4** (씬 확인). boxpack001.json은 **B-004×8**이라 **run-id는 boxpack001이지만 실제론 다른(더 쉬운) manifest.** B-001(8cm·0.21kg)이 작아 수렴이 깔끔했던 것. binpacker(boxpack001) vs RL 비교하려면 manifest를 B-004로 맞춰 재학습 필요.
 - ⚠️ 누적보상 1.13은 step shaping 포함 → binpacker Final(0~1)과 직접비교 X. 우열은 배치/Final로 따로 비교.
 - **다음**: from-scratch는 baseline으로 보존. **`RefinementAgent`(v2) 별도 스크립트** 구현(빈패커 배치서 시작→이동/회전, 정적 보상, 예측기 오면 교체) → v1 vs v2 비교. (사용자 결정: 두 버전 다 남겨 "여러 방식 시도" 기록.)
+
+## 2026-07-07 — RefinementAgent(v2) 구현 (빈패커 배치서 시작 → 재배치)
+
+- **사용자 원안 = Refinement**: RL이 맨땅이 아니라 **빈패커 완성 배치에서 시작**해 개선. from-scratch(v1, PlacementAgent)와 **별도 스크립트**로 공존(둘 다 보존·비교).
+- **`RefinementAgent.cs` 신설**:
+  - 시작: `startManifest`(B-004×8·SYN-04×4·SYN-03×4)를 **Dense Pack** → 완성 배치(결정론적=boxpack001, JSON 파싱 대신 매 에피소드 Pack).
+  - 관측: 높이맵(341)+CoG(3)+질량(1)+편차(2) = 347.
+  - 행동: **(아이템 index·목표 셀·회전) = (16, 341, 2)** — 화물 하나를 다른 셀로 재배치(relocate). 무효(겹침/이탈)=원위치 복구+작은 벌점 → **fail-out/붕괴 없음.**
+  - 보상: **ΔFinal**(이동 후−전). 누적 = "빈패커 대비 개선량". 시작이 Dense(CoG 안 봄)라 개선 여지 큼.
+  - 에피소드: `stepsPerEpisode`(25) 재배치 후 종료.
+- **`Docs/rl_config_refine.yaml`**: 순수 PPO, Behavior Name=RefinementAgent, run-id `boxpack001_refine`.
+- **씬 세팅(사용자)**: RefinementAgent 오브젝트 = BehaviorParameters(Behavior Name=RefinementAgent, Type=Default) + DecisionRequester(1) + RefinementAgent.
+- **의미**: Dense는 공간만 채워 CoG 위험 → RL이 무거운 것 낮/중앙으로 재배치해 Final↑ = 안전 개선을 학습. 붕괴 원천봉쇄. v1(from-scratch) vs v2(refinement) TensorBoard 비교.
+- **다음**: 학습 → 곡선(누적=개선량) 양수면 RL이 빈패커 개선 성공. 이후 예측기 보상으로 교체.
 
 ---
 

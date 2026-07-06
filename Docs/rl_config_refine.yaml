@@ -1,0 +1,44 @@
+# ============================================================================
+# Refinement RL 설정 (v2, minimal-cycle-boxes 브랜치)
+# ----------------------------------------------------------------------------
+# 빈패커(Dense) 완성 배치에서 시작 → 화물 재배치로 정적 보상 개선. 붕괴 불가(무효=되돌림).
+# 실행: conda activate mlagents-x86
+#       mlagents-learn Docs/rl_config_refine.yaml --run-id=boxpack001_refine --force
+#       → "Listening..." 뜨면 Unity Play (Behavior Type=Default)
+#
+# ⚠️ 씬 세팅: RefinementAgent 오브젝트에 BehaviorParameters(Behavior Name=**RefinementAgent**)
+#            + DecisionRequester(Decision Period=1) + RefinementAgent 컴포넌트.
+#            obs/action은 코드가 자동 산정 (obs=347, action=(16,341,2)).
+#            순수 PPO (BC·GAIL 없음). 보상은 ΔFinal(개선분) — 누적 = 빈패커 대비 개선량.
+# ============================================================================
+behaviors:
+  RefinementAgent:                  # ← BehaviorParameters 의 Behavior Name 과 일치
+    trainer_type: ppo
+
+    hyperparameters:
+      batch_size: 128
+      buffer_size: 2048
+      learning_rate: 3.0e-4
+      learning_rate_schedule: linear
+      beta: 1.0e-2                  # 엔트로피 — 재배치 탐색
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+
+    network_settings:
+      hidden_units: 256
+      num_layers: 2
+      normalize: true
+      vis_encode_type: simple
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+
+    max_steps: 300000
+    time_horizon: 64
+    summary_freq: 5000
+    keep_checkpoints: 5
+    checkpoint_interval: 50000
+    threaded: true

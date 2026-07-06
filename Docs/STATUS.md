@@ -2,7 +2,7 @@
 
 > **이 파일부터 읽으세요.** 채팅/세션이 바뀌어도 이 한 장이면 "지금 어디까지 왔고, 무엇을 하는 중이고, 다음에 뭘 하면 되는지"를 파악할 수 있게 유지한다.
 > 세부는 각 전문 문서로 링크. **코드가 항상 최종 진실**(문서와 코드가 다르면 코드 우선, 그리고 이 문서를 고칠 것).
-> 최종 갱신: **2026-07-06 (오후, 순수 BPP 최소사이클 분기)**.
+> 최종 갱신: **2026-07-07 (박스 최소사이클: from-scratch v1 성공 + Refinement v2 구현)**.
 
 > ⚠️ **브랜치 주의**: 현재 작업 브랜치 = **`minimal-cycle-boxes`** (순수 3D BPP 최소 사이클 = **§3b**). RL 탐색벽/Option C 작업은 **`3dbpp` 브랜치에 커밋(29e167b) 보존** — 아래 §3(RL)은 그 맥락. 복귀 `git checkout 3dbpp`.
 
@@ -102,16 +102,23 @@
 
 **단순화**: 화물=박스 중심(파이프/포대/코일 제외), 격자 2cm(341), 순수 **Dense** 빈패킹(안정성 없음, 공간만). 7kg 한도 유지 + 가벼운 합성 박스로 부피 채움.
 
-**구현 완료 (2026-07-06)**:
-- **카탈로그 SYN 6종**(`cargo_catalog.csv`): SYN-01~06(저밀도 합성 박스). 실측 박스는 무거워 7kg에서 부피 못 채움 → SYN으로 "꽉 채운 버전" 관측.
-- **`CargoManifest.cs`**: 인스펙터 (id,개수) 목록 / CSV → 화물 리스트.
-- **`BinPackerVisualizer`·`BinPackerRunner` 정리**: 랜덤·게이팅풀·진단 제거 → **manifest 지정 → Dense pack → 부피점유율(%) 표시 → JSON 저장**.
+**구현 완료**:
+- **카탈로그 SYN 6종**(`cargo_catalog.csv`): 저밀도 합성 박스(SYN-01~06). 실측 박스는 무거워 7kg에 부피 못 채움 → SYN으로 "꽉 채운 버전" 가능. 폭 ≤10cm(트레이 21cm에 잘 들어가게).
+- **`CargoManifest.cs` + `Editor/ManifestEntryDrawer.cs`**: 인스펙터 **(화물 드롭다운, 개수)** 목록 / CSV → 화물 리스트. (id 타이핑 대신 카탈로그 선택)
+- **`BinPackerVisualizer`·`BinPackerRunner` 정리**: 랜덤·게이팅풀·진단 제거 → manifest 지정 → **Dense pack → 부피점유율(%) → JSON 저장**.
+- **`PlacementAgent` Option C**(보장된 완주) + **`useFixedManifest`**(단일 고정 케이스).
+- **`RefinementAgent.cs`(v2)** + `rl_config_refine.yaml`: 빈패커 배치서 시작 → 재배치.
+- **단일 주행 파일 분리**: `CargoRiskRecorder.resultsPath`(파일명만 넣으면 Data/Results 새 파일) + `DataLogger.combinedFileName`.
+
+**진행/결과**:
+- ✅ **from-scratch 단일케이스 PPO 성공**(`boxpack001_ppo`): guaranteedCompletion ON → **Mean Reward +1.13, Std ~0.09, ~25k 수렴.** Option C 검증. = **v1 baseline**.
+  - ⚠️ 단 이 run의 manifest는 **B-001**×8(씬 확인), boxpack001.json은 **B-004**×8 → run명과 실제 화물 불일치(B-001이 더 쉬움). binpacker 비교하려면 B-004로 재학습 필요.
+- ✅ **RefinementAgent(v2) 구현 완료** — 실행 대기.
 
 **▶ 다음 액션**:
-1. `3D BPP` 씬 `BinPackerVisualizer`: 인스펙터 `manifest`에 (예: SYN-01×5, SYN-03×8) 채우고 `packMode=Dense` → Play/우클릭 "Repack" → **부피점유율↑** 확인.
-2. 우클릭 **"Save Layout JSON"** → `Assets/Data/Cases_binpack/<name>.json`.
-3. (이후) 그 레이아웃 **동적 주행**(DynamicSceneController) → results.csv.
-4. (이후) **PPO** — 박스 풀 + Option C(3dbpp에 있음)로 학습. ※ RL은 3dbpp 브랜치 자산이라, 이 브랜치에서 RL까지 가려면 병합 전략 별도 결정.
+1. **RefinementAgent(v2) 학습**: 새 씬(또는 PlacementAgent 비활성)에 RefinementAgent 오브젝트(BehaviorParameters Name=RefinementAgent·Type=Default + DecisionRequester + RefinementAgent) → `mlagents-learn Docs/rl_config_refine.yaml --run-id=boxpack001_refine --force` → Play. 콘솔 `obs=347, action=(16,341,2)` 확인. **누적보상=빈패커 대비 개선량**, 양수로 오르는지.
+2. **v1 vs v2 비교**: 최종 배치의 Final·CoG로(누적보상 스케일 달라 직접비교 X). manifest 통일(B-004) 후가 깔끔.
+3. (이후) 배치들 **동적 주행**(단일=layoutPath+resultsPath / 배치=runAllCases) → 롤/피치/LTR 데이터 축적 → **간단 예측기** 학습 → RL 보상 교체.
 
 ---
 
