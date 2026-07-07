@@ -203,6 +203,8 @@ SS 내부 `ssHeavyW 0.6 / ssFlatW 0.4` (flatnessRef 0.1)
 | Manifest 해석 | `Assets/Scripts/Static/CargoManifest.cs` | 인스펙터/CSV → CargoType 리스트 |
 | 빈패커(교사) | `Assets/Scripts/Static/BinPacker.cs`·`BinPackerRunner.cs`·`BinPackerVisualizer.cs` | Pack/Decide/게이팅풀·진단 |
 | 시각화(표시 전용) | `Assets/Scripts/Static/PlacementVisualizer.cs` | Play 중 체크박스 켜서 배치 눈으로 확인 |
+| 배치 저장(주행 입력) | `Assets/Scripts/Static/PlacementAgent.cs` | `saveLayoutOnComplete`·`layoutOutName` → 완주 시 CargoLayoutFile JSON (회전 halfSize 역산). ⚠️ 학습 중 OFF |
+| 위험 예측기(⚠️ 동역학→LTR) | `Assets/Scripts/Modeling/RiskModel.cs`·`RiskDisplay.cs` | 입력=주행 동역학 7피처→\|LTR\|. **배치 안 봄 → RL 배치 보상 직접 불가.** RL엔 "배치→위험" 예측기 별도 필요 |
 
 ## 9. 설계문서와 다른 점 (스테일 주의)
 

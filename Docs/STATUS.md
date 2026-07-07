@@ -2,7 +2,7 @@
 
 > **이 파일부터 읽으세요.** 채팅/세션이 바뀌어도 이 한 장이면 "지금 어디까지 왔고, 무엇을 하는 중이고, 다음에 뭘 하면 되는지"를 파악할 수 있게 유지한다.
 > 세부는 각 전문 문서로 링크. **코드가 항상 최종 진실**(문서와 코드가 다르면 코드 우선, 그리고 이 문서를 고칠 것).
-> 최종 갱신: **2026-07-07 오후 (v2 무효벽 진단→보류 · v1+CGS 단독 보상 학습 중 · ⭐예측기 도착)**.
+> 최종 갱신: **2026-07-07 오후5 (✅ 최소 사이클 관통 완료 · 🔴 정적 CGS ≠ 동적 안전 실측 발견 → "배치→위험" 예측기 필요 확정)**.
 
 > ⚠️ **브랜치 주의**: 현재 작업 브랜치 = **`minimal-cycle-boxes`** (순수 3D BPP 최소 사이클 = **§3b**). RL 탐색벽/Option C 작업은 **`3dbpp` 브랜치에 커밋(29e167b) 보존** — 아래 §3(RL)은 그 맥락. 복귀 `git checkout 3dbpp`.
 
@@ -116,15 +116,18 @@
 - ⚠️ **RefinementAgent(v2) 실행 → 보류** (2026-07-07, 상세 WORKLOG):
   - 1차 실패: 씬에 **빈 base `Agent` 컴포넌트**가 잘못 추가돼 그놈이 스텝 돎(관측 0 경고·에피소드 무한) → 제거로 해결. (ML-Agents `Agent`는 추상 아님 — Add Component로 추가 가능한 함정)
   - 2차(boxpack002_refine): **-0.455→-0.411(60k) flat.** 25스텝 중 무효 이동 ~20회 — "무효 회피"만 배우고 ΔFinal 신호는 페널티에 묻힘. 계측 3종(`Refine/ValidMoveRate`·`FinalImprovement`·`FinalAbsolute`)·셀 마스킹 추가했으나 **겹침은 브랜치 독립 마스킹으론 차단 불가**(조합 의존). 근본 해법=아이템 라운드로빈 — **v2는 여기서 보류**(폐기 아님).
-- 🔵 **현재 진행: v1 + CGS 단독 보상** (균등배치 최소 실험): RLTraining 씬 rewardConfig **wLE=0·wCGS=1·wSS=0**(LE 밀집 항이 "펼치기"를 벌하던 것 제거). run `b001_cgs` 1.14→1.325(35k) 건강 → **stepScale=0**(순수 터미널 CGS, 기대 0.6대→0.85+) 재실험 중.
-  - **판정은 곡선이 아니라 배치 모양**: Play 중 PlacementVisualizer 체크박스 켜서 Game 뷰 확인(보고 끄기). 낮고 고르게=성공 / 중앙 탑=CGS 해킹→펼침 항 추가.
-- ⭐ **위험 예측기 도착** (2026-07-07, playground 머지 000432d): `Assets/Scripts/Modeling/RiskModel.cs`·`RiskDisplay.cs`·`Assets/Resources/risk_model_treedata.json`. "예측기 오면 보상 교체" 전제가 현실이 됨.
+- ✅ **v1 + CGS 단독 보상 학습**(`b001_cgs`, B-001×8+SYN): RLTraining 씬 rewardConfig **wLE=0·wCGS=1·wSS=0**(LE 밀집 항이 "펼치기"를 벌하던 것 제거). 1.14→1.325(35k) 건강 수렴. `saveLayoutOnComplete`로 배치 JSON 추출(`b001_cgs_layout.json`). ⚠️ 관찰: CGS만이면 무게중심 중앙은 맞추나 **중앙 한 줄로 세로 쌓음**(CGS 허점).
+- ✅ **최소 사이클 관통 완료 + 🔴 정적≠동적 발견**(2026-07-07, 상세 WORKLOG 오후5):
+  - 배치→주행→위험도까지 배관 다 뚫림. 안전 최적 배치 수동 설계 `boxpack001_best.json`(B-004×8+SYN, CoG (0,0.042,0), 대칭).
+  - **동일 조건 주행 비교**: 빈패커 max|LTR| 0.646 vs **안전최적 0.936(더 위험!)**. 원인=앞축(빈패커는 뒤쏠림이라 앞축 가벼워 롤 회피, 안전배치는 앞뒤 균등이라 앞축도 쏠림). → **정적 CGS ≠ 동적 안전 실측 증명.**
+- ⭐ **위험 예측기 정체 파악** (playground 머지 000432d): `RiskModel` 입력=**주행 동역학**(속도·횡가속도·롤레이트…)→|LTR|. **배치를 안 봄** → RL 배치 보상에 직접 못 씀(주행 필요·배치 구분 불가). RL 보상엔 **"배치→위험" 예측기가 별도 필요**. `RiskDisplay`는 주행 중 실시간 예측/검증 대시보드.
+- 🔧 **`CargoPlacer.layoutPath` 추가**: 정적 씬도 동적처럼 임의 경로 배치 로드(발표 캡처용). / `cases_cog.csv`(500 케이스 CoG) 생성.
 
-**▶ 다음 액션**:
-1. **stepScale=0 run 판정**: 곡선(0.85+ 수렴 여부) + **배치 모양 눈 확인** → 펼쳐졌으면 정적 RL 여기서 멈춤(더 튜닝은 헛수고 — 예측기 보상으로 교체 예정이므로).
-2. **⭐ `RiskModel.cs` 입력 피처 검토**: 예측기 입력 피처 = RL 보상/관측 피처 일관성(§1 크럭스). 예측기를 RL 보상으로 붙이는 인터페이스 설계.
-3. 학습된 배치 **동적 주행 1회**(layoutPath+resultsPath) → LTR/roll 확인 = "CGS 좋은 배치가 실제로 안전한가" 검증 → 최소 사이클 완주.
-4. (이후) manifest B-004 통일 → binpacker vs RL 공정 비교. v2(Refinement)는 라운드로빈 구조로 재도전 여지.
+**▶ 다음 액션** (최소 사이클 관통 완료 → 정리·다음 단계):
+1. **발표 정리**: 배치 비교 그림(빈패커 vs 안전최적 + CoG + 주행 LTR) + 스토리(빈패킹→최적화→주행→정적≠동적 역설).
+2. **⭐ 예측기 담당자와 협의**: "**배치→위험** 예측기" 계획·입력 피처 여부 (지금 온 건 "동역학→위험"이라 RL 보상 부적합). 피처 일관성 = §1 크럭스 → 혼자 정하면 안 됨.
+3. **배치→위험 예측기용 데이터 수집**: 여러 배치(500 케이스 등) 주행 → (배치 정적피처, 실제 max|LTR|) 데이터셋 → 예측기 학습 → RewardCalculator.Final을 CGS→예측위험으로 교체.
+4. (보조) results.csv 요약 버그 점검(시계열은 정상), 속도 통제 재주행으로 정적≠동적 굳히기. v2(Refinement)는 라운드로빈 구조로 재도전 여지.
 
 ---
 
@@ -198,6 +201,8 @@
 | demo(BC 교사) | `Assets/Demonstrations/PlacementAgentDe.demo` (1281셀=1cm 시절, +0.867) ⚠️ **현재 격자 2cm(341셀)와 비호환. 현재 v1(boxpack)은 순수 PPO라 데모 미사용** |
 | A안 게이팅 풀 | `Assets/Data/gated_manifests.txt` (5000, type id 콤마구분) — 현재 v1은 useGatedPool=0이라 미사용 |
 | 학습 결과 | `results/<run-id>/` — **최신**: `boxpack001_ppo`(v1 baseline +1.13) · `b001_cgs`(CGS단독) · `b001_cgs_nostep`(stepScale=0) · `boxpack002_refine`(v2 flat −0.4) · `boxpack003_refine_mask`. **옛**: `placement_v1`(4cm −0.36)·`v2_bc`·`v3_gated`·`v4_grid2_gail`·`v5_beta_gail`(정체/붕괴) |
-| 동적 결과 | `Assets/Data/Results/results.csv` (235행 주행완료: max_abs_ltr·rollover·risk_grade·roll·pitch·cargo_shift…) |
+| 동적 결과 | `Assets/Data/Results/results.csv` (요약, ⚠️ max_abs_ltr 0 기록 버그 — **시계열이 진실**) · `combined_timeseries_*.csv`(시계열, LayoutID·RunID별) |
+| RL/비교 배치 JSON | `Assets/Data/Results/b001_cgs_layout.json`(RL, B-001) · `boxpack001_best.json`(안전최적, B-004, CoG 0/0.042/0) · `boxpack001_good.json`(그리디) · 빈패커 baseline `Cases_binpack/boxpack001.json`(B-004) |
+| 케이스 CoG | `Assets/Data/Results/cases_cog.csv` (500개: case·profile·num_cargo·total_mass·cog_x/y/z) |
 | 위험 데이터셋 | `Assets/Data/Cases/` (**500**) · 빈패커 baseline `Assets/Data/Cases_binpack/` (**102**) · 빈패커 테스트 `Assets/Data/TestCases/`(binpack001~) |
 | 씬 | `Assets/Scenes/RLTraining.unity`(학습·PlacementAgent v1) · `RefinementAgent.unity`(v2, 보류) · `StaticSceneRoot.unity`(정적) · `3D BPP.unity`(빈패커/진단/풀생성 = `BinPackerVisualizer` 단독) · `SampleScene.unity`(예측기 담당자) · `ConsoleTestScene.unity` |

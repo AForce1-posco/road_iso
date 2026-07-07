@@ -74,11 +74,13 @@ public class CargoPlacer : MonoBehaviour
     public string savePath = "";
 
     [Header("불러오기 (수정 후 재저장 가능)")]
+    [Tooltip("특정 파일을 직접 지정 (절대경로 또는 Assets 상대경로). 채우면 loadFileName·폴더 무시하고 이걸 최우선. 동적 씬 CargoBedLoader.layoutPath 와 동일. 예: /.../Assets/Data/Results/boxpack001_best.json")]
+    public string layoutPath = "";
     [Tooltip("불러올 파일명 (확장자 생략 가능). 비우면 기본 저장본. 예: case03_left_heavy_pipes, test_20260703_...")]
     public string loadFileName = "";
     [Tooltip("체크=TestCases 폴더에서, 해제=Cases 폴더에서 불러옴")]
     public bool loadFromTestFolder = false;
-    [Tooltip("체크 시 Play하자마자 loadFileName 자동 로드")]
+    [Tooltip("체크 시 Play하자마자 자동 로드 (layoutPath 또는 loadFileName)")]
     public bool autoLoadOnPlay = false;
 
     [Header("카메라")]
@@ -200,8 +202,8 @@ public class CargoPlacer : MonoBehaviour
         ApplySceneLook();
         RaiseChanged();
 
-        if (autoLoadOnPlay && !string.IsNullOrEmpty(loadFileName))
-            LoadLayout(); // Play 직후 지정 배치 자동 로드
+        if (autoLoadOnPlay && (!string.IsNullOrEmpty(layoutPath) || !string.IsNullOrEmpty(loadFileName)))
+            LoadLayout(); // Play 직후 지정 배치 자동 로드 (layoutPath 우선)
     }
 
     /// <summary>트레이 시각물(바닥·벽·격자·라벨·높이표시)을 지우고 다시 그린다.
@@ -1002,6 +1004,13 @@ public class CargoPlacer : MonoBehaviour
     /// </summary>
     private string LoadResolvedPath()
     {
+        // 1) 직접 경로 지정(절대/상대) → 최우선 (동적 CargoBedLoader.layoutPath 와 동일)
+        if (!string.IsNullOrEmpty(layoutPath))
+        {
+            if (layoutPath.Contains("/") || layoutPath.Contains("\\")) return layoutPath;
+            return Path.Combine(Application.dataPath, layoutPath);   // 파일명만이면 Assets/ 기준
+        }
+        // 2) 파일명 지정 → Cases/TestCases 폴더
         if (string.IsNullOrEmpty(loadFileName)) return ResolvedPath;
         string n = loadFileName.EndsWith(".json") ? loadFileName : loadFileName + ".json";
         string dir = loadFromTestFolder ? CargoPaths.TestCasesDir : CargoPaths.CasesDir;

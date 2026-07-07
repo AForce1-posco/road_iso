@@ -203,6 +203,22 @@
 - `.gitignore`에 `Assets/Data/Results/*.csv.meta` 추가(65dca84) — untracked meta 노이즈 29개 정리. `results.csv.meta`는 기추적이라 유지.
 - **다음(신규 우선순위)**: `RiskModel.cs` **입력 피처 검토** — 예측기 입력 = RL 보상/관측 피처 일관성이 §1 크럭스. CGS 실험 확인 후 착수.
 
+## 2026-07-07 (오후 5) — ✅ 최소 사이클 관통 완료 + 정적≠동적 실측 발견
+
+- **배치 저장 기능**(`PlacementAgent`): `saveLayoutOnComplete`·`layoutOutName` 추가 → 에피소드 완주 시 배치를 `Assets/Data/Results/<name>.json`(CargoLayoutFile 포맷, 주행 입력용)으로 저장. 회전은 halfSize↔sizeM 역산으로 localEuler 복원. ⚠️ 학습 중엔 OFF(에피소드마다 씀). run `b001_cgs`(B-001×8+SYN) inference로 `b001_cgs_layout.json` 추출.
+  - **RL 배치 특성 관찰**: CGS 단독은 무게중심 중앙(cog_x·z≈0)은 맞추나 **화물 대부분을 x=0 중앙 한 줄로 세로 쌓음**(좌우 폭 미사용) = CGS 허점(중앙성 만점을 제일 쉽게 달성). Step shaping의 compact 항(30%) 잔존도 원인.
+- **안전 최적 배치 수동 설계**(비교 기준): `boxpack001_best.json` — boxpack001과 같은 화물(B-004×8+SYN)로 무거운 것 바닥·좌우앞뒤 완벽 대칭 → **CoG (0, 0.042, 0), 3층, 최고 15cm**. AABB 검증 통과. (그리디판 `boxpack001_good.json` cog_y 0.048보다 낮음.) 빈패커 원본 CoG (-0.019, 0.099, -0.123) = 뒤 쏠림·높음.
+- **🔴 주행 비교 (동일 조건: 58km/h·조향31°·완주·같은 화물 B-004)**:
+  - 빈패커 `boxpack001`: max|LTR| **0.646**  /  안전최적 `boxpack001_best`: max|LTR| **0.936** — **무게중심 완벽 배치가 오히려 더 위험!** (둘 다 전복·바퀴들림 없음)
+  - **원인 = 앞축**: 최대 LTR 순간(t≈396.6s 같은 코너) 앞축 LTR 빈패커 0.165(안정) vs 안전 0.868(위험). 빈패커는 무게 뒤 쏠림(cog_z=-12cm)이라 앞축이 가벼워 롤 회피, 안전배치는 앞뒤 균등이라 앞축도 좌우 크게 쏠림(FL 1000 vs FR 14159). **뒤축은 둘 다 임계**(RL=0, rear LTR=1.0) 공통. 부분 오염: 안전배치가 그 코너 2km/h 빠르게 진입.
+  - **의미: 정적 CGS proxy ≠ 동적 안전을 실측으로 증명.** "무게중심 중앙·낮음"이 특정 코스에선 두 축을 동시에 위험에 노출 → **예측기 기반 보상 필요성 확정**(표본 1코스·2배치라 일반화는 유보).
+- **⚠️ 예측기 정체 파악**(중요): `RiskModel` 입력 = **주행 동역학**(SpeedKmh·LatAcc·LongAcc·RollRate·YawRate·SteerAngle·MaxSideSlip) → |LTR|. **입력에 배치/CoG 없음.** `RiskDisplay`가 주행 중 매 프레임 차량에서 뽑아 실시간 예측(실측 LTR과 비교하는 검증 대시보드). → **RL 배치 보상에 직접 못 씀**: ① 주행해야 피처 생김(느림 벽), ② 배치를 안 봐 배치 안전성 구분 불가. RL 보상엔 **"배치(정적피처)→위험" 예측기가 별도로 필요**(지금 온 것과 다름). §1 "피처 일관성" 크럭스의 구체적 실체.
+- **`CargoPlacer`에 `layoutPath` 추가**: 동적 `CargoBedLoader`와 통일 — 절대/상대 경로 최우선(비우면 기존 loadFileName+폴더). 정적 씬도 임의 경로 배치 로드(발표 캡처용). `autoLoadOnPlay` 조건도 layoutPath 포함.
+- **results.csv 요약 버그**: 시계열엔 LTR 0.936인데 요약 파일엔 max_abs_ltr=0(run_id도 불일치). **시계열이 진실**, 요약 뽑는 코드 별도 점검 필요.
+- **500 케이스 CoG CSV**: `cases_cog.csv`(case·profile·num_cargo·total_mass·cog_x/y/z). 카탈로그 name→massKg 매핑, 누락 0.
+- **✅ 최소 사이클 관통 완료**: 빈패킹→RL배치→JSON저장→주행→위험도까지 각 부품 작동·연결 확인. ⑤(위험→보상 자동 되먹임)만 남았고, 이는 "배치→위험" 예측기 대기(주행 직접 연결은 느림 벽).
+- **다음**: (1) 발표 정리(배치 비교 그림+스토리) (2) 예측기 담당자와 "배치→위험 예측기 계획·입력 피처" 협의 (3) 배치들 주행 데이터 수집 → "배치→위험" 예측기 학습 → 보상 교체.
+
 ---
 
 _(새 항목은 이 아래에 추가)_
