@@ -44,7 +44,7 @@
 | **S3 에이전트** | ✅ | `PlacementAgent.cs` — 관측 1299, 행동 (종류12·셀1281·회전2), 마스킹, 페널티 |
 | **S4 학습(1차)** | ✅ | PPO 씬 끝까지 돎. Mean Reward −1.67→−0.36(미수렴). env `mlagents-x86` |
 | 캘리브레이션 | ✅ | 로드셀 실측 vs 계산 CoG 오차 0.1~0.3cm(x·y 양호) |
-| 위험 데이터셋 | ✅ | `generate_risk_cases.py` → `Cases/` **1000개**(예측기④ 학습용, 하드룰 의도위반 허용). 옛 2000개는 archive 백업 |
+| 위험 데이터셋 | ✅ | `generate_risk_cases.py` → `Cases/` **500개**(예측기④ 학습용, 하드룰 의도위반 허용). 옛 2000개는 archive 백업 |
 | 격자 4cm→1cm | ⚠️ | RL·빈패커 전부 **1281셀** 통일. **BUT 이게 탐색벽의 근본 원인 → 2cm 완화 검토 중**(§3). 기존 `placement_v1`(4cm) onnx 비호환 |
 | **빈패커 Phase1** | ✅ | `BinPacker.cs`+`Runner`+`Visualizer`. Phase1 검증 20케이스 성공률 89%·평균보상 **0.698** |
 | **빈패커 Phase2 코드** | ✅ | `Decide()`(다음 한 수)+`PlacementAgent.Heuristic` 연결+rl_config `behavioral_cloning`+진단(`DiagnoseUnplaced`) |
@@ -194,10 +194,10 @@
 | ⭐ 위험 예측기 (다른 담당자, 07-07 합류) | `Assets/Scripts/Modeling/RiskModel.cs` · `RiskDisplay.cs` · `Assets/Resources/risk_model_treedata.json` |
 | 규칙 / 보상 | `Assets/Scripts/Static/RuleChecker.cs` · `RewardCalculator.cs` ⚠️ RLTraining 씬은 wLE=0·wCGS=1·wSS=0 오버라이드 |
 | 빈패커 | `Assets/Scripts/Static/BinPacker.cs` · `BinPackerRunner.cs` · `BinPackerVisualizer.cs` |
-| 학습 설정 | `Docs/rl_config.yaml` |
-| demo(BC 교사) | `Assets/Demonstrations/PlacementAgentDe.demo` (1281셀용, +0.867) ⚠️ **격자 바꾸면 재기록 필수** |
-| A안 게이팅 풀 | `Assets/Data/gated_manifests.txt` (5000, type id 콤마구분) |
-| 학습 결과 | `results/<run-id>/` — `placement_v1`(4cm, −0.36) · `placement_v2_bc`(정체) · `placement_v3_gated`(정체 std0) |
-| 동적 결과 | `Assets/Data/Results/results.csv` (234행 주행완료: max_abs_ltr·rollover·risk_grade·roll·pitch·cargo_shift…) |
-| 위험 데이터셋 | `Assets/Data/Cases/` (**1000**) · 빈패커 baseline `Assets/Data/Cases_binpack/` (**200**) |
-| 씬 | `Assets/Scenes/RLTraining.unity`(학습·PlacementAgent) · `StaticSceneRoot.unity` · `3D BPP.unity`(빈패커/진단/풀생성 = `BinPackerVisualizer` 단독) |
+| 학습 설정 | **현재 사용 `Docs/rl_config_box.yaml`**(v1 단일케이스 순수 PPO) · `rl_config_refine.yaml`(v2, 보류) · `rl_config.yaml`(옛 게이팅+GAIL, 미사용) |
+| demo(BC 교사) | `Assets/Demonstrations/PlacementAgentDe.demo` (1281셀=1cm 시절, +0.867) ⚠️ **현재 격자 2cm(341셀)와 비호환. 현재 v1(boxpack)은 순수 PPO라 데모 미사용** |
+| A안 게이팅 풀 | `Assets/Data/gated_manifests.txt` (5000, type id 콤마구분) — 현재 v1은 useGatedPool=0이라 미사용 |
+| 학습 결과 | `results/<run-id>/` — **최신**: `boxpack001_ppo`(v1 baseline +1.13) · `b001_cgs`(CGS단독) · `b001_cgs_nostep`(stepScale=0) · `boxpack002_refine`(v2 flat −0.4) · `boxpack003_refine_mask`. **옛**: `placement_v1`(4cm −0.36)·`v2_bc`·`v3_gated`·`v4_grid2_gail`·`v5_beta_gail`(정체/붕괴) |
+| 동적 결과 | `Assets/Data/Results/results.csv` (235행 주행완료: max_abs_ltr·rollover·risk_grade·roll·pitch·cargo_shift…) |
+| 위험 데이터셋 | `Assets/Data/Cases/` (**500**) · 빈패커 baseline `Assets/Data/Cases_binpack/` (**102**) · 빈패커 테스트 `Assets/Data/TestCases/`(binpack001~) |
+| 씬 | `Assets/Scenes/RLTraining.unity`(학습·PlacementAgent v1) · `RefinementAgent.unity`(v2, 보류) · `StaticSceneRoot.unity`(정적) · `3D BPP.unity`(빈패커/진단/풀생성 = `BinPackerVisualizer` 단독) · `SampleScene.unity`(예측기 담당자) · `ConsoleTestScene.unity` |

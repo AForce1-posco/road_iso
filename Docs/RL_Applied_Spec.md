@@ -197,7 +197,12 @@ SS 내부 `ssHeavyW 0.6 / ssFlatW 0.4` (flatnessRef 0.1)
 | Observation | `Assets/Scripts/Static/PlacementAgent.cs` | `CollectObservations()` |
 | Reward | `Assets/Scripts/Static/RewardCalculator.cs` | `Final()` / `Step()` / LE·CGS·SS / `RewardConfig` |
 | Reward 검증 | `Assets/Scripts/Static/RewardCalculatorTest.cs` | 좋은/나쁜 배치 점수 비교 |
-| 페널티·커리큘럼 | `Assets/Scripts/Static/PlacementAgent.cs` | `Fail()` / `OnEpisodeBegin()` / `invalidPenalty`·`maxInvalidPerEpisode` |
+| 페널티·완주(Option C) | `Assets/Scripts/Static/PlacementAgent.cs` | `guaranteedCompletion`·`invalidStepPenalty`·`unplacedPenalty` / `PlaceByTeacher()`·`TryPlace()`. (구 `Fail()`은 OFF일 때만) |
+| 커리큘럼·고정manifest | `Assets/Scripts/Static/PlacementAgent.cs` | `OnEpisodeBegin()` / `useFixedManifest`·`useGatedPool` |
+| **v2 Refinement** (§11, 보류) | `Assets/Scripts/Static/RefinementAgent.cs` + `Docs/rl_config_refine.yaml` | 빈패커 배치서 시작→재배치 |
+| Manifest 해석 | `Assets/Scripts/Static/CargoManifest.cs` | 인스펙터/CSV → CargoType 리스트 |
+| 빈패커(교사) | `Assets/Scripts/Static/BinPacker.cs`·`BinPackerRunner.cs`·`BinPackerVisualizer.cs` | Pack/Decide/게이팅풀·진단 |
+| 시각화(표시 전용) | `Assets/Scripts/Static/PlacementVisualizer.cs` | Play 중 체크박스 켜서 배치 눈으로 확인 |
 
 ## 9. 설계문서와 다른 점 (스테일 주의)
 

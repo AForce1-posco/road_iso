@@ -1,7 +1,7 @@
 # 정적 씬 셋업 (road_iso, Unity 2020.3)
 
 ## 씬 만들기 — 1분 컷
-1. `File > New Scene` → `Assets/Scenes/01_StaticScene.unity`으로 저장
+1. `File > New Scene` → `Assets/Scenes/StaticSceneRoot.unity`으로 저장 (현재 실제 정적 씬 파일명)
 2. 빈 GameObject 생성 (이름 아무거나, 예: `Bootstrap`)
 3. `StaticSceneSetup` 컴포넌트 추가
 4. Play — 끝. 카메라·조명·트레이·대시보드 전부 자동 생성
