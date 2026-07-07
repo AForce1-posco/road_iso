@@ -2,7 +2,8 @@
 
 > **이 문서는 "지금 코드에 실제로 들어간 것"을 사람이 보기 쉽게 정리한 것**이다.
 > 설계 문서(`RL_StaticPlacement_Design.md`)와 달리 **현재 소스 코드가 기준**(source of truth).
-> 최종 확인: 2026-07-06 기준 (격자 1cm 반영). ⚠️ 격자 변경으로 기존 placement_v1 모델과 비호환 — 새 run + BC 워밍스타트 전제. 값이 바뀌면 이 문서도 갱신할 것.
+> 최종 확인: **2026-07-07** (minimal-cycle-boxes 브랜치 기준 — 격자 **2cm(11×31=341셀)** · Option C · v2 RefinementAgent §11). 격자 변경으로 1cm/4cm 시절 onnx와 비호환. 값이 바뀌면 이 문서도 갱신할 것.
+> ⚠️ **씬 오버라이드 주의**: RewardConfig는 직렬화 필드라 **씬 인스펙터 값이 코드 기본값을 덮는다** — RLTraining 씬은 현재 **wLE=0·wCGS=1·wSS=0**(CGS 단독 실험, §4.5).
 > 코드 위치는 맨 아래 §8 색인 참조.
 
 ---
@@ -29,8 +30,8 @@
 | Unity 로컬 치수 | x=0.21, z=0.61, y한도=0.27 (m) | 원점=트레이 중심, 바닥 top y=0.01 |
 | **축 매핑** | **x = 좌우 / y = 높이 / z = 주행·길이** | 설계문서 x(주행)=Unity z |
 | 최대 적재중량(payload) | **7 kg (목업)** | = 700 kg 실차 (massScale 100) |
-| 격자 | **21(x) × 61(z) = 1281 셀** | **1cm 격자** (2026-07-06, 4cm→1cm 변경) |
-| 화물 풀 | **12종** (트레이에 정상 배치 가능한 것) | B-007·긴 파이프 제외 |
+| 격자 | **11(x) × 31(z) = 341 셀** | **2cm 격자** (2026-07-06, 1cm 탐색벽으로 2cm 완화. 1cm=1281셀 시절 onnx 비호환) |
+| 화물 풀 | **12종** (트레이에 정상 배치 가능한 것) + SYN 합성박스 6종(최소사이클용) | B-007·긴 파이프 제외. `useFixedManifest` 시 그 manifest 종류만 |
 
 ---
 
@@ -68,8 +69,8 @@
 
 | 브랜치 | 의미 | 크기 |
 |---|---|---|
-| branch0 | **화물 종류** 선택 (풀에서) | 12 |
-| branch1 | **격자 셀** 선택 | 1281 (21×61) |
+| branch0 | **화물 종류** 선택 (풀에서) | 풀 크기 (기본 12 / `useFixedManifest` 시 그 manifest의 distinct 종류 수 — boxpack 케이스 3) |
+| branch1 | **격자 셀** 선택 | **341 (11×31, 2cm)** |
 | branch2 | **회전** | 2 (0° / 90°) |
 
 - 셀 인덱스 → 셀 중심 (x,z) → 화물을 그 위에서 **낙하 안착**(RestBottom: 바닥 또는 기존 화물 위).
@@ -80,11 +81,12 @@
 - branch1: **높이 한도까지 꽉 찬 셀** 차단.
 - branch2(회전): 종류의존이라 사전 마스킹 불가 → **무효 조합은 보상 페널티로** 학습.
 
-### 3.3 적용 (OnActionReceived)
+### 3.3 적용 (OnActionReceived) — Option C 반영 (2026-07-06~)
 1. 후보 화물·셀·회전으로 `PlacedItem` 생성 (안착 높이 계산)
 2. `RuleChecker.IsValid` 검사
    - **유효** → 배치 확정 + `AddReward(Step)` (shaping). 목록 다 놓으면 `Final` 보상 + `EndEpisode`.
-   - **무효** → `Fail()`: −0.05, 20회 반복 시 −0.5 + `EndEpisode`.
+   - **무효** + `guaranteedCompletion` **ON(기본)** → **−0.02**(`invalidStepPenalty`) + **빈패커가 대신 한 수**(`PlaceByTeacher`) → 항상 완주. 교사도 막히면 partial Final − 남은개수×0.1(`unplacedPenalty`) + 종료.
+   - **무효** + OFF(구방식) → `Fail()`: −0.05, 20회 반복 시 −0.5 + `EndEpisode`. (붕괴 원인이라 안 씀)
 
 > ⚠️ **마스킹이 약함**: 지금은 "빈 종류·꽉 찬 셀"만 막고, 겹침·경계·지지율·파이프규칙·회전은 못 막아 **무효 행동이 페널티로 새어나옴** → 1차 학습이 -0.36에 머문 원인. (개선: 커리큘럼/워밍스타트/마스킹 강화)
 
@@ -123,27 +125,29 @@ Step = stepScale · (0.7·CGS + 0.3·격자밀집),   stepScale = 0.05
 ### 4.4 페널티 (PlacementAgent에서)
 | 상황 | 값 |
 |---|---|
-| 무효 행동 1회 | −0.05 (`invalidPenalty`) |
-| 무효 20회 반복 (`maxInvalidPerEpisode`) | −0.5 + 에피소드 종료 |
+| 무효 행동 (Option C ON, 기본) | −0.02 (`invalidStepPenalty`) + 교사 대체 배치 |
+| 완주 실패 시 남은 화물 1개당 (Option C) | −0.1 (`unplacedPenalty`) |
+| 무효 행동 (Option C OFF, 구방식) | −0.05, 20회 반복 시 −0.5 + 종료 |
 
 ### 4.5 가중치 전체 (RewardConfig, 인스펙터 튜닝)
-`wLE 0.50 / wCGS 0.40 / wSS 0.10` · `stepScale 0.05`
+**코드 기본값**: `wLE 0.50 / wCGS 0.40 / wSS 0.10` · `stepScale 0.05`
+**⚠️ RLTraining 씬 현재값 (2026-07-07 CGS 단독 실험)**: `wLE 0 / wCGS 1 / wSS 0` — LE의 밀집 항이 "펼치기(균등배치)"를 벌해서 제거. stepScale도 0으로 낮춰 순수 터미널 CGS 실험 중(Step의 0.3·밀집 항까지 제거 목적).
 LE 내부 `leVolW 0.4 / leCompactW 0.4 / leContactW 0.2` (contactGap 0.03)
 CGS 내부 `cgsCenterW 0.5 / cgsLowW 0.5`
 SS 내부 `ssHeavyW 0.6 / ssFlatW 0.4` (flatnessRef 0.1)
 
 ---
 
-## 5. Observation — 관측 (PlacementAgent.CollectObservations) = 1299차원
+## 5. Observation — 관측 (PlacementAgent.CollectObservations) = 341 + 6 + 풀크기
 
 | 그룹 | 차원 |
 |---|---|
-| 높이맵 (셀별 적재높이 / 27cm) | 1281 (21×61) |
+| 높이맵 (셀별 적재높이 / 27cm) | **341 (11×31)** |
 | 현재 CoG (x/half, z/half, y정규화) | 3 |
 | 총질량 / payload | 1 |
 | CoG 편차 \|x\|, \|z\| | 2 |
-| 종류별 남은 수 (정규화) | 12 |
-| **합** | **1299** |
+| 종류별 남은 수 (정규화) | 풀 크기 (기본 12 / 고정 manifest 3) |
+| **합** | **기본 359 / boxpack 고정 케이스 350** |
 
 ---
 
@@ -193,7 +197,12 @@ SS 내부 `ssHeavyW 0.6 / ssFlatW 0.4` (flatnessRef 0.1)
 | Observation | `Assets/Scripts/Static/PlacementAgent.cs` | `CollectObservations()` |
 | Reward | `Assets/Scripts/Static/RewardCalculator.cs` | `Final()` / `Step()` / LE·CGS·SS / `RewardConfig` |
 | Reward 검증 | `Assets/Scripts/Static/RewardCalculatorTest.cs` | 좋은/나쁜 배치 점수 비교 |
-| 페널티·커리큘럼 | `Assets/Scripts/Static/PlacementAgent.cs` | `Fail()` / `OnEpisodeBegin()` / `invalidPenalty`·`maxInvalidPerEpisode` |
+| 페널티·완주(Option C) | `Assets/Scripts/Static/PlacementAgent.cs` | `guaranteedCompletion`·`invalidStepPenalty`·`unplacedPenalty` / `PlaceByTeacher()`·`TryPlace()`. (구 `Fail()`은 OFF일 때만) |
+| 커리큘럼·고정manifest | `Assets/Scripts/Static/PlacementAgent.cs` | `OnEpisodeBegin()` / `useFixedManifest`·`useGatedPool` |
+| **v2 Refinement** (§11, 보류) | `Assets/Scripts/Static/RefinementAgent.cs` + `Docs/rl_config_refine.yaml` | 빈패커 배치서 시작→재배치 |
+| Manifest 해석 | `Assets/Scripts/Static/CargoManifest.cs` | 인스펙터/CSV → CargoType 리스트 |
+| 빈패커(교사) | `Assets/Scripts/Static/BinPacker.cs`·`BinPackerRunner.cs`·`BinPackerVisualizer.cs` | Pack/Decide/게이팅풀·진단 |
+| 시각화(표시 전용) | `Assets/Scripts/Static/PlacementVisualizer.cs` | Play 중 체크박스 켜서 배치 눈으로 확인 |
 
 ## 9. 설계문서와 다른 점 (스테일 주의)
 
@@ -220,3 +229,23 @@ RL이 정체(std 0, 매 에피소드 fail-out)한 원인을 코드 레벨로 확
 4. **보상 가중치 관찰**: `LE 0.5 > CGS 0.4 > SS 0.1`. 밀도(LE)가 CoG안정성(CGS)보다 높음 → "안전 주·촘촘 부차"라면 CGS↑ 재조정 여지. **단 예측기(④) 오면 안정 항이 재정의되므로 지금 과튜닝은 헛수고.**
 
 5. **Dense/Decide 정렬 불일치** (외부 리뷰 지적, 검증됨): `Pack(Dense)`는 부피 내림차순, `Decide()`는 항상 질량 내림차순. 현재 BC 교사=Stable(질량)이라 무해하나, **Dense를 교사/비교에 쓰면 순서 정합 필요.**
+
+---
+
+## 11. v2 — RefinementAgent (별도 에이전트, 2026-07-07 현재 **보류**)
+
+> `Assets/Scripts/Static/RefinementAgent.cs` + `Docs/rl_config_refine.yaml`. v1(PlacementAgent)과 완전 독립 — 빈패커 **완성 배치에서 시작**해 재배치(relocate)로 개선하는 구조.
+
+| 항목 | 값 |
+|---|---|
+| 시작 상태 | `startManifest`(B-004×8·SYN-04×4·SYN-03×4=16개)를 매 에피소드 Dense Pack (결정론 = boxpack001) |
+| 관측 | 높이맵 341 + CoG 3 + 질량 1 + 편차 2 = **347** |
+| 행동 | (아이템 16 · 셀 341 · 회전 2) — 화물 하나를 다른 셀로 이동 |
+| 보상 | **ΔFinal**(이동 후−전), 무효 이동 = 원위치 복구 + −0.02. 누적 = 빈패커 대비 개선량 |
+| 에피소드 | 25회 재배치(`stepsPerEpisode`) 후 종료 |
+| 계측 (07-07 추가) | TensorBoard `Refine/ValidMoveRate` · `Refine/FinalImprovement` · `Refine/FinalAbsolute` |
+| 마스킹 (07-07 추가) | branch1(셀)만: 높이 꽉 찬 셀 + 최소 화물도 못 놓는 가장자리. **겹침은 조합 의존이라 차단 불가** |
+
+**보류 사유** (WORKLOG 07-07): 60k에서 −0.455→−0.411 flat. 25스텝 중 무효 ~20회 → 학습이 "무효 회피"에 소모, ΔFinal(±0.01~0.05) 신호가 페널티(−0.5 규모)에 묻힘. 근본 해법 = 행동에서 아이템 선택 제거(라운드로빈 순차 재배치 → 겹침까지 정확 마스킹 가능) — 재도전 시 이 구조로.
+
+**⚠️ 씬 함정 (07-07 실전)**: ML-Agents의 base `Agent`는 추상 클래스가 아니라 Add Component로 추가 가능. 실수로 붙으면 `DecisionRequester.GetComponent<Agent>()`가 그놈을 잡아 **관측 0 경고 + 에피소드 무한**이 됨. 에이전트 오브젝트엔 Agent 파생 컴포넌트가 정확히 1개인지 확인할 것.

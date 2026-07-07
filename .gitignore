@@ -107,5 +107,10 @@ InitTestScene*.unity*
 
 # Generated result files
 Assets/Data/Results/*.csv
+Assets/Data/Results/*.csv.meta
 Assets/Demonstrations/
 /results/
+
+# Generated result files
+Assets/Data/Results/*.csv
+Assets/Data/Results/*.csv.meta
