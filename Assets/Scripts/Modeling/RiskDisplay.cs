@@ -3,22 +3,29 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody))]
 public class RiskDisplay : MonoBehaviour
 {
-    
     [Header("참조 (비우면 자동 검색)")]
     public VehicleController vehicle;
     public RiskModel riskModel;
     public CargoBedLoader cargoLoader;
 
+    [Header("최종 지표 노이즈 필터")]
+    public int sustainFrames = 3;
+
     private Rigidbody rb;
     private Vector3 lastVelocity;
     private Vector3 lastEuler;
 
-    private float currentRisk = 0f;      // 모델 예측값
-    private float actualLTR = 0f;        // 실측값 (물리엔진에서 직접 계산)
+    private float currentRisk = 0f;
+    private float actualLTR = 0f;
     private float currentSpeed = 0f;
     private float currentLatAcc = 0f;
     private float currentRoll = 0f;
     private float currentYawRate = 0f;
+
+    private float[] ltrWindow;
+    private int windowIndex = 0;
+    private int windowFilled = 0;
+    private float riskIndex = 0f;
 
     private int cargoCount = 0;
     private float cargoMass = 0f;
@@ -30,6 +37,8 @@ public class RiskDisplay : MonoBehaviour
         if (vehicle == null) vehicle = GetComponent<VehicleController>();
         if (riskModel == null) riskModel = GetComponent<RiskModel>();
         if (cargoLoader == null) cargoLoader = FindObjectOfType<CargoBedLoader>();
+
+        ltrWindow = new float[Mathf.Max(1, sustainFrames)];
     }
 
     void Start()
@@ -70,14 +79,12 @@ public class RiskDisplay : MonoBehaviour
             rrForce = GetNormalForce(vehicle.rearRight);
         }
 
-        // 실측 LTR = 물리엔진에서 바로 계산 (DataLogger.CalculateLTR과 동일 공식)
         float leftForce = flForce + rlForce;
         float rightForce = frForce + rrForce;
         float denom = leftForce + rightForce;
         actualLTR = denom > 0.001f ? Mathf.Clamp((rightForce - leftForce) / denom, -1f, 1f) : 0f;
 
         float[] features = { speedKmh, latAcc, longAcc, rollRate, yawRate, steerAngle, maxSideSlip };
-
         if (riskModel != null)
             currentRisk = riskModel.Predict(features);
 
@@ -85,6 +92,20 @@ public class RiskDisplay : MonoBehaviour
         currentLatAcc = latAcc;
         currentRoll = roll;
         currentYawRate = yawRate;
+
+        ltrWindow[windowIndex] = Mathf.Abs(actualLTR);
+        windowIndex = (windowIndex + 1) % ltrWindow.Length;
+        windowFilled = Mathf.Min(windowFilled + 1, ltrWindow.Length);
+
+        if (windowFilled >= ltrWindow.Length)
+        {
+            float sustainedValue = ltrWindow[0];
+            for (int i = 1; i < ltrWindow.Length; i++)
+                sustainedValue = Mathf.Min(sustainedValue, ltrWindow[i]);
+
+            if (sustainedValue > riskIndex)
+                riskIndex = sustainedValue;
+        }
 
         if (!cargoInfoCached && cargoLoader != null && cargoLoader.Loaded.Count > 0)
         {
@@ -117,49 +138,48 @@ public class RiskDisplay : MonoBehaviour
 
     void OnGUI()
     {
-        int panelWidth = 320;
+        int panelWidth = 220;
         int x = 20, y = 20;
 
-        GUI.Box(new Rect(x, y, panelWidth, 260), "");
+        GUIStyle rowStyle = new GUIStyle(GUI.skin.label) { fontSize = 13 };
+        GUIStyle riskStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
 
-        GUIStyle titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold };
-        GUIStyle rowStyle = new GUIStyle(GUI.skin.label) { fontSize = 16 };
-        GUIStyle smallStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Italic };
+        float riskScore100 = currentRisk * 100f;
+        float indexScore100 = riskIndex * 100f;
 
         Color riskColor = Color.green;
         if (currentRisk > 0.3f) riskColor = new Color(0.9f, 0.8f, 0.1f);
         if (currentRisk > 0.6f) riskColor = Color.red;
 
-        int cy = y + 10;
+        GUI.Box(new Rect(x, y, panelWidth, 165), "");
 
-        GUIStyle riskStyle = new GUIStyle(titleStyle);
-        riskStyle.normal.textColor = riskColor;
-        GUI.Label(new Rect(x + 15, cy, panelWidth - 30, 28), $"모델 예측 RiskScore: {currentRisk:F3}", riskStyle);
-        cy += 26;
+        int cy = y + 8;
+        GUIStyle r = new GUIStyle(riskStyle) { normal = { textColor = riskColor } };
+        GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 22), $"Risk: {riskScore100:F0}", r);
+        cy += 20;
 
-        Rect barBg = new Rect(x + 15, cy, panelWidth - 30, 16);
+        Rect barBg = new Rect(x + 10, cy, panelWidth - 20, 12);
         GUI.Box(barBg, "");
-        Rect barFill = new Rect(x + 15, cy, (panelWidth - 30) * Mathf.Clamp01(currentRisk), 16);
-        Color prevColor = GUI.color;
+        Rect barFill = new Rect(x + 10, cy, (panelWidth - 20) * Mathf.Clamp01(currentRisk), 12);
+        Color prev = GUI.color;
         GUI.color = riskColor;
         GUI.DrawTexture(barFill, Texture2D.whiteTexture);
-        GUI.color = prevColor;
-        cy += 24;
+        GUI.color = prev;
+        cy += 20;
 
-        // 실측값 비교 — 모델 검증용
-        GUI.Label(new Rect(x + 15, cy, panelWidth - 30, 20), $"실측 |LTR| (정답)   : {Mathf.Abs(actualLTR):F3}", rowStyle); cy += 18;
-        float diff = Mathf.Abs(currentRisk - Mathf.Abs(actualLTR));
-        GUI.Label(new Rect(x + 15, cy, panelWidth - 30, 18), $"(모델 오차: {diff:F3})", smallStyle); cy += 26;
-
-        GUI.Label(new Rect(x + 15, cy, panelWidth - 30, 20), $"속도(Speed)      : {currentSpeed:F1} km/h", rowStyle); cy += 20;
-        GUI.Label(new Rect(x + 15, cy, panelWidth - 30, 20), $"횡가속도(LatAcc) : {currentLatAcc:F2} m/s²", rowStyle); cy += 20;
-        GUI.Label(new Rect(x + 15, cy, panelWidth - 30, 20), $"기울기(Roll)     : {currentRoll:F1}°", rowStyle); cy += 20;
-        GUI.Label(new Rect(x + 15, cy, panelWidth - 30, 20), $"회전율(YawRate)  : {currentYawRate:F1}°/s", rowStyle); cy += 24;
+        GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 18), $"Speed: {currentSpeed:F1} km/h", rowStyle); cy += 16;
+        GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 18), $"LatAcc: {currentLatAcc:F2}", rowStyle); cy += 16;
+        GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 18), $"Roll: {currentRoll:F1}°", rowStyle); cy += 16;
+        GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 18), $"YawRate: {currentYawRate:F1}°/s", rowStyle); cy += 20;
 
         if (cargoInfoCached)
-        {
-            GUIStyle cargoStyle = new GUIStyle(rowStyle) { fontStyle = FontStyle.Italic };
-            GUI.Label(new Rect(x + 15, cy, panelWidth - 30, 20), $"화물: {cargoCount}개 / 총 {cargoMass:F0}kg", cargoStyle);
-        }
+            GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 18), $"Cargo: {cargoCount}개 / {cargoMass:F0}kg", rowStyle);
+        cy += 24;
+
+        Color idxColor = Color.green;
+        if (riskIndex > 0.3f) idxColor = new Color(0.9f, 0.8f, 0.1f);
+        if (riskIndex > 0.6f) idxColor = Color.red;
+        GUIStyle idxStyle = new GUIStyle(riskStyle) { normal = { textColor = idxColor } };
+        GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 22), $"RiskIndex: {indexScore100:F0}", idxStyle);
     }
 }
