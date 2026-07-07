@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "mode": "dense_badcog",
-  "profile": "dense_badcog",
+  "composition": "pipe_only",
+  "cogMode": "low_center",
+  "fill": 0.055,
+  "totalMass": 2.195,
+  "cargoCount": 4,
+  "maxHeight": 0.03,
+  "cog": {
+    "x": 0.0077,
+    "y": 0.0176,
+    "z": -0.0723
+  },
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -11,9 +20,9 @@
     {
       "type": "스틸 파이프 번들(2)",
       "localPos": {
-        "x": -0.06,
+        "x": -0.07,
         "y": 0.015,
-        "z": -0.14
+        "z": -0.09
       },
       "localEuler": {
         "x": 90.0,
@@ -23,53 +32,11 @@
       "secured": true
     },
     {
-      "type": "배관 파이프 S-002",
+      "type": "흰 파이프 번들(2)",
       "localPos": {
-        "x": 0.03,
-        "y": 0.03,
-        "z": -0.15
-      },
-      "localEuler": {
-        "x": 90.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-003",
-      "localPos": {
-        "x": 0.02,
-        "y": 0.03,
-        "z": 0.27
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-001",
-      "localPos": {
-        "x": 0.08,
-        "y": 0.03,
+        "x": 0.04,
+        "y": 0.025,
         "z": -0.05
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "배관 파이프 S-002",
-      "localPos": {
-        "x": -0.01,
-        "y": 0.03,
-        "z": -0.15
       },
       "localEuler": {
         "x": 90.0,
@@ -81,9 +48,9 @@
     {
       "type": "스틸 파이프 번들(2)",
       "localPos": {
-        "x": -0.09,
+        "x": -0.03,
         "y": 0.015,
-        "z": -0.05
+        "z": -0.07
       },
       "localEuler": {
         "x": 90.0,
@@ -93,42 +60,14 @@
       "secured": true
     },
     {
-      "type": "배관 파이프 S-001",
+      "type": "스틸 파이프 번들(2)",
       "localPos": {
-        "x": 0.08,
-        "y": 0.03,
-        "z": -0.29
+        "x": 0.09,
+        "y": 0.015,
+        "z": -0.08
       },
       "localEuler": {
         "x": 90.0,
-        "y": 0.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-001",
-      "localPos": {
-        "x": 0.07,
-        "y": 0.03,
-        "z": 0.07
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-003",
-      "localPos": {
-        "x": 0.02,
-        "y": 0.07,
-        "z": 0.27
-      },
-      "localEuler": {
-        "x": 0.0,
         "y": 0.0,
         "z": 0.0
       },

@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "mode": "normal",
-  "profile": "stable",
+  "composition": "box_light",
+  "cogMode": "front_back",
+  "fill": 0.183,
+  "totalMass": 0.65,
+  "cargoCount": 17,
+  "maxHeight": 0.26,
+  "cog": {
+    "x": 0.0032,
+    "y": 0.1206,
+    "z": 0.1363
+  },
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -9,25 +18,11 @@
   },
   "cargo": [
     {
-      "type": "박스 B-007",
+      "type": "합성 표준큐브",
       "localPos": {
-        "x": -0.01,
-        "y": 0.035,
-        "z": -0.01
-      },
-      "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
-        "z": 0.0
-      },
-      "secured": true
-    },
-    {
-      "type": "박스 B-003",
-      "localPos": {
-        "x": -0.01,
-        "y": 0.03,
-        "z": -0.18
+        "x": -0.03,
+        "y": 0.06,
+        "z": 0.08
       },
       "localEuler": {
         "x": 0.0,
@@ -37,10 +32,220 @@
       "secured": true
     },
     {
-      "type": "코일 C-001",
+      "type": "합성 경량소형",
       "localPos": {
-        "x": 0.02,
-        "y": 0.02,
+        "x": -0.06,
+        "y": 0.04,
+        "z": 0.25
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.04,
+        "z": 0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 표준큐브",
+      "localPos": {
+        "x": -0.03,
+        "y": 0.16,
+        "z": 0.08
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.04,
+        "y": 0.04,
+        "z": 0.25
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.04,
+        "y": 0.04,
+        "z": 0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.06,
+        "y": 0.04,
+        "z": 0.1
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.03,
+        "y": 0.24,
+        "z": 0.08
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.1,
+        "z": 0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.06,
+        "y": 0.1,
+        "z": 0.1
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.16,
+        "z": 0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.04,
+        "y": 0.1,
+        "z": 0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.06,
+        "y": 0.16,
+        "z": 0.1
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.06,
+        "y": 0.22,
+        "z": 0.1
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.22,
+        "z": 0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.04,
+        "y": 0.16,
+        "z": 0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.04,
+        "y": 0.22,
         "z": 0.18
       },
       "localEuler": {

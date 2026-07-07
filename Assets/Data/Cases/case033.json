@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "mode": "risky",
-  "profile": "risk_heavy",
+  "composition": "coil_only",
+  "cogMode": "ecc_L",
+  "fill": 0.028,
+  "totalMass": 4.0,
+  "cargoCount": 4,
+  "maxHeight": 0.02,
+  "cog": {
+    "x": -0.0328,
+    "y": 0.02,
+    "z": 0.005
+  },
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -11,9 +20,9 @@
     {
       "type": "코일 C-001",
       "localPos": {
-        "x": 0.01,
+        "x": -0.03,
         "y": 0.02,
-        "z": -0.02
+        "z": -0.2
       },
       "localEuler": {
         "x": 0.0,
@@ -25,9 +34,9 @@
     {
       "type": "코일 C-001",
       "localPos": {
-        "x": 0.03,
+        "x": -0.04,
         "y": 0.02,
-        "z": 0.18
+        "z": 0.23
       },
       "localEuler": {
         "x": 0.0,
@@ -37,11 +46,25 @@
       "secured": true
     },
     {
-      "type": "박스 B-003",
+      "type": "코일 C-001",
       "localPos": {
-        "x": 0.02,
-        "y": 0.03,
-        "z": -0.27
+        "x": -0.021,
+        "y": 0.02,
+        "z": 0.08
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "코일 C-001",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.02,
+        "z": -0.09
       },
       "localEuler": {
         "x": 0.0,
