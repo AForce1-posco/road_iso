@@ -153,6 +153,56 @@
 - ⚠️ boxpack001.json(B-004×8·SYN-04×4·SYN-03×4)과 3D BPP 씬 현재 인스펙터(B-004×5·B-005×4·C-001×6)가 다름 — JSON 저장 후 인스펙터 변경한 것. **PPO fixedManifest는 JSON 내용 기준**.
 - **다음**: RLTraining 씬 PlacementAgent에 fixedManifest 채우고 → `--run-id=boxpack001_ppo`. 양수 등반·binpacker Final 초과 관찰.
 
+## 2026-07-06 (오후 8) — ✅ from-scratch PPO 성공 (Option C 검증)
+
+- **guaranteedCompletion OFF** 때: −1.85(무효 페널티 누적, MaxStep까지 헤맴). **ON으로 켜니**: Mean Reward **1.03→1.13**, Std ~0.09, **~25k에서 수렴**. 45k에서 수동 정지(Ctrl+C), onnx 저장.
+- **의미**: Option C(보장된 완주) 설계가 옳았음이 실측 검증됨(양수·붕괴 없음). **그간 붕괴 반복하던 RL이 박스 단일케이스에서 드디어 학습.** = **from-scratch baseline (v1)** = `results/boxpack001_ppo/PlacementAgent.onnx`.
+- ⚠️ **manifest 불일치 주의**: 이 run의 fixedManifest는 **B-001×8·SYN-03×4·SYN-04×4** (씬 확인). boxpack001.json은 **B-004×8**이라 **run-id는 boxpack001이지만 실제론 다른(더 쉬운) manifest.** B-001(8cm·0.21kg)이 작아 수렴이 깔끔했던 것. binpacker(boxpack001) vs RL 비교하려면 manifest를 B-004로 맞춰 재학습 필요.
+- ⚠️ 누적보상 1.13은 step shaping 포함 → binpacker Final(0~1)과 직접비교 X. 우열은 배치/Final로 따로 비교.
+- **다음**: from-scratch는 baseline으로 보존. **`RefinementAgent`(v2) 별도 스크립트** 구현(빈패커 배치서 시작→이동/회전, 정적 보상, 예측기 오면 교체) → v1 vs v2 비교. (사용자 결정: 두 버전 다 남겨 "여러 방식 시도" 기록.)
+
+## 2026-07-07 — RefinementAgent(v2) 구현 (빈패커 배치서 시작 → 재배치)
+
+- **사용자 원안 = Refinement**: RL이 맨땅이 아니라 **빈패커 완성 배치에서 시작**해 개선. from-scratch(v1, PlacementAgent)와 **별도 스크립트**로 공존(둘 다 보존·비교).
+- **`RefinementAgent.cs` 신설**:
+  - 시작: `startManifest`(B-004×8·SYN-04×4·SYN-03×4)를 **Dense Pack** → 완성 배치(결정론적=boxpack001, JSON 파싱 대신 매 에피소드 Pack).
+  - 관측: 높이맵(341)+CoG(3)+질량(1)+편차(2) = 347.
+  - 행동: **(아이템 index·목표 셀·회전) = (16, 341, 2)** — 화물 하나를 다른 셀로 재배치(relocate). 무효(겹침/이탈)=원위치 복구+작은 벌점 → **fail-out/붕괴 없음.**
+  - 보상: **ΔFinal**(이동 후−전). 누적 = "빈패커 대비 개선량". 시작이 Dense(CoG 안 봄)라 개선 여지 큼.
+  - 에피소드: `stepsPerEpisode`(25) 재배치 후 종료.
+- **`Docs/rl_config_refine.yaml`**: 순수 PPO, Behavior Name=RefinementAgent, run-id `boxpack001_refine`.
+- **씬 세팅(사용자)**: RefinementAgent 오브젝트 = BehaviorParameters(Behavior Name=RefinementAgent, Type=Default) + DecisionRequester(1) + RefinementAgent.
+- **의미**: Dense는 공간만 채워 CoG 위험 → RL이 무거운 것 낮/중앙으로 재배치해 Final↑ = 안전 개선을 학습. 붕괴 원천봉쇄. v1(from-scratch) vs v2(refinement) TensorBoard 비교.
+- **다음**: 학습 → 곡선(누적=개선량) 양수면 RL이 빈패커 개선 성공. 이후 예측기 보상으로 교체.
+
+## 2026-07-07 (오후 1) — RefinementAgent 실행 실패 진단: 빈 base Agent 컴포넌트
+
+- **증상**: 학습은 도는데 `Fewer observations (0) made than vector observation size (347)` 경고 반복 + **에피소드 완료 0회**(Mean Reward 안 뜸).
+- **진단**(Editor.log 분석): RefinementAgent 스크립트 Setup은 정상 실행됐으나(obs=347 로그), 실제 스텝을 돈 건 **같은 오브젝트에 잘못 추가된 ML-Agents base `Agent` 컴포넌트**. base Agent는 CollectObservations가 비어 있고(→ 관측 0) EndEpisode를 안 불러(→ 에피소드 무한) "Heuristic method not implemented" 경고까지 일치. ML-Agents 2.0.2의 `Agent`는 추상이 아니라 Add Component로 그냥 추가됨 + `DecisionRequester.GetComponent<Agent>()`가 첫 번째 Agent를 잡는 구조.
+- **해결(사용자)**: 씬에서 빈 Agent 컴포넌트 제거 → 정상 학습 시작. ⚠️ 부수 발견: RefinementAgent.unity 씬이 디스크에 저장 안 돼 있었음(⌘S 필요).
+
+## 2026-07-07 (오후 2) — RefinementAgent(v2) 학습 결과: "무효 회피"만 배움 → 계측·마스킹 추가
+
+- **결과(boxpack002_refine)**: Mean Reward **-0.455 → -0.411**(60k), std ~0.03. 붕괴는 없으나(설계 의도대로) 거의 flat.
+- **진단**: 에피소드 25스텝 중 **무효 이동 ~20회**(전부 무효 바닥 = -0.50). 보상 역산 유효율 ~9→18%. 즉 60k 동안 배운 건 "무효 이동 덜 하기"뿐 — 진짜 목표(ΔFinal, 한 수당 ±0.01~0.05)는 무효 페널티 신호(-0.5 규모)에 묻힘. **보상 정렬 문제**(설계 자체는 건강).
+- **계측 추가**(RefinementAgent): 에피소드 끝마다 StatsRecorder → TensorBoard `Refine/ValidMoveRate`·`Refine/FinalImprovement`(끝Final−시작Final)·`Refine/FinalAbsolute`.
+- **셀 마스킹 추가**(WriteDiscreteActionMask): 높이한도 꽉 찬 셀 + 최소 화물도 못 놓는 가장자리 셀 차단. ⚠️ **한계 명시**: 무효 최대 원인인 "겹침"은 (아이템×회전×셀) 조합 의존이라 ML-Agents 브랜치 독립 마스킹으론 원천 차단 불가. 근본 해법 = 행동에서 아이템 선택 제거(라운드로빈) — 보류.
+
+## 2026-07-07 (오후 3) — 전략 전환: v2 보류, v1+CGS 단독 보상으로 최소 사이클 진행
+
+- **결정(사용자+논의)**: 최소 사이클 목적 = "학습이 되는구나" 확인이지 RL 완성이 아님. 배치 학습은 **v1(from-scratch+Option C)이 이미 +1.13으로 검증**돼 있으므로, v2 무효 문제와 싸우는 대신 v1을 사용. v2는 보류(폐기 아님).
+- **보상 단순화 = CGS 단독**: 사용자 목표 "균등배치(앞뒤·좌우 균형)"는 정적 CoG로 즉시 계산 가능(주행 불필요) = 기존 `CogStability`가 그 자체. **RLTraining 씬 rewardConfig를 wLE=0·wCGS=1·wSS=0으로 변경**(코드 수정 없음, 씬 값만). **이유**: LE의 밀집(compact) 항이 "펼치기"를 벌해서(가중치 0.5로 최대) 쏠린 배치를 못 펼치던 것 — CGS 단독으로 비로소 펼칠 유인이 생김.
+- **run `b001_cgs`**: 1.140(5k) → **1.325**(35k), std 0.245→0.116. 양수 출발+상승 = 건강. ⚠️ 단 stepScale=0.05의 Step shaping(0.7·CGS+0.3·**밀집**)이 여전히 포함 → 완전한 순수 CGS 아님 → **stepScale=0 재실험 진행**(보상 = 에피소드 끝 Final(CGS) 단독, 기대: 0.6대 출발 → 0.85+ 수렴, 이론 천장 <1.0).
+- **합격 판정 기준**: 곡선이 아니라 **Scene/Game 뷰의 배치 모양**(PlacementVisualizer 잠깐 켜서 확인 — CGS는 "중앙 탑쌓기"로도 만점 가능한 허점이 있어 보상 해킹 여부는 눈으로만 판별). 낮고 고르게 깔리면 성공 / 중앙 탑이면 펼침 항 추가 필요.
+- **다음**: 배치 모양 확인 → (펼쳐졌으면) 정적 RL 멈추고 동적 주행 검증으로, (뭉쳤으면) 펼침 보상 항 추가.
+
+## 2026-07-07 (오후 4) — ⭐ 위험 예측기 도착 (playground 머지) + git 정리
+
+- **`origin/playground` → `minimal-cycle-boxes` 머지 완결**(000432d): **다른 담당자의 위험 예측기 합류** — `Assets/Scripts/Modeling/RiskModel.cs`·`RiskDisplay.cs`·`Assets/Resources/risk_model_treedata.json`(트리 모델). STATUS의 "예측기 오면 보상 교체" 전제가 현실이 됨.
+- 충돌 8건 전부 `.meta`(코드 충돌 0): 삭제 확정 3(타임시리즈 meta)·예측기 측 유지 3(Modeling.meta·Resources.meta·treedata.meta)·우리 측 유지 2(RefinementAgent 씬/타이머 meta). `SampleScene.unity.meta`가 디스크에서 증발해 있던 것 HEAD에서 복원(GUID 보존).
+- `.gitignore`에 `Assets/Data/Results/*.csv.meta` 추가(65dca84) — untracked meta 노이즈 29개 정리. `results.csv.meta`는 기추적이라 유지.
+- **다음(신규 우선순위)**: `RiskModel.cs` **입력 피처 검토** — 예측기 입력 = RL 보상/관측 피처 일관성이 §1 크럭스. CGS 실험 확인 후 착수.
+
 ---
 
 _(새 항목은 이 아래에 추가)_

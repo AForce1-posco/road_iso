@@ -2,7 +2,7 @@
 
 > **이 파일부터 읽으세요.** 채팅/세션이 바뀌어도 이 한 장이면 "지금 어디까지 왔고, 무엇을 하는 중이고, 다음에 뭘 하면 되는지"를 파악할 수 있게 유지한다.
 > 세부는 각 전문 문서로 링크. **코드가 항상 최종 진실**(문서와 코드가 다르면 코드 우선, 그리고 이 문서를 고칠 것).
-> 최종 갱신: **2026-07-06 (오후, 순수 BPP 최소사이클 분기)**.
+> 최종 갱신: **2026-07-07 오후 (v2 무효벽 진단→보류 · v1+CGS 단독 보상 학습 중 · ⭐예측기 도착)**.
 
 > ⚠️ **브랜치 주의**: 현재 작업 브랜치 = **`minimal-cycle-boxes`** (순수 3D BPP 최소 사이클 = **§3b**). RL 탐색벽/Option C 작업은 **`3dbpp` 브랜치에 커밋(29e167b) 보존** — 아래 §3(RL)은 그 맥락. 복귀 `git checkout 3dbpp`.
 
@@ -18,7 +18,7 @@
 - **주 목표**: 주문받은 **고정 화물 목록**(예: 코일3·파이프1·박스5)을 **규칙을 지키며 안전하게** 배치하는 최적 정책. + 그 배치의 위험도 예측.
 - **부 목표**: 동적 주행 시 **전복이 안 나는 배치인지**, 유사 케이스의 전복/휘청임을 **미리 예측**.
 - **우선순위**: **안전이 주(主)**, 촘촘함은 **부차/조건**(고정 주문이 다 들어가기 위한 feasibility + 안전 동점 시 타이브레이커). 순수 3D BPP(밀도 최대화)가 아님 — 극단 밀도는 CoG↑로 안전과 상충.
-- **역할 분담**: **위험도(동적 주행·예측기 ④⑤)는 다른 담당자 작업.** 이쪽(정적 배치 RL)은 그걸 기다리며 진행. → 지금 RL 보상은 정적 근사(proxy), 최종엔 예측기 보상으로 교체.
+- **역할 분담**: **위험도(동적 주행·예측기 ④⑤)는 다른 담당자 작업.** 이쪽(정적 배치 RL)은 그걸 기다리며 진행. → 지금 RL 보상은 정적 근사(proxy), 최종엔 예측기 보상으로 교체. **⭐ 2026-07-07 예측기 1차 도착**(`Scripts/Modeling/RiskModel.cs`, playground 머지) — 피처 검토 후 보상 연결이 다음 과제.
 
 ---
 
@@ -44,7 +44,7 @@
 | **S3 에이전트** | ✅ | `PlacementAgent.cs` — 관측 1299, 행동 (종류12·셀1281·회전2), 마스킹, 페널티 |
 | **S4 학습(1차)** | ✅ | PPO 씬 끝까지 돎. Mean Reward −1.67→−0.36(미수렴). env `mlagents-x86` |
 | 캘리브레이션 | ✅ | 로드셀 실측 vs 계산 CoG 오차 0.1~0.3cm(x·y 양호) |
-| 위험 데이터셋 | ✅ | `generate_risk_cases.py` → `Cases/` **1000개**(예측기④ 학습용, 하드룰 의도위반 허용). 옛 2000개는 archive 백업 |
+| 위험 데이터셋 | ✅ | `generate_risk_cases.py` → `Cases/` **500개**(예측기④ 학습용, 하드룰 의도위반 허용). 옛 2000개는 archive 백업 |
 | 격자 4cm→1cm | ⚠️ | RL·빈패커 전부 **1281셀** 통일. **BUT 이게 탐색벽의 근본 원인 → 2cm 완화 검토 중**(§3). 기존 `placement_v1`(4cm) onnx 비호환 |
 | **빈패커 Phase1** | ✅ | `BinPacker.cs`+`Runner`+`Visualizer`. Phase1 검증 20케이스 성공률 89%·평균보상 **0.698** |
 | **빈패커 Phase2 코드** | ✅ | `Decide()`(다음 한 수)+`PlacementAgent.Heuristic` 연결+rl_config `behavioral_cloning`+진단(`DiagnoseUnplaced`) |
@@ -102,16 +102,29 @@
 
 **단순화**: 화물=박스 중심(파이프/포대/코일 제외), 격자 2cm(341), 순수 **Dense** 빈패킹(안정성 없음, 공간만). 7kg 한도 유지 + 가벼운 합성 박스로 부피 채움.
 
-**구현 완료 (2026-07-06)**:
-- **카탈로그 SYN 6종**(`cargo_catalog.csv`): SYN-01~06(저밀도 합성 박스). 실측 박스는 무거워 7kg에서 부피 못 채움 → SYN으로 "꽉 채운 버전" 관측.
-- **`CargoManifest.cs`**: 인스펙터 (id,개수) 목록 / CSV → 화물 리스트.
-- **`BinPackerVisualizer`·`BinPackerRunner` 정리**: 랜덤·게이팅풀·진단 제거 → **manifest 지정 → Dense pack → 부피점유율(%) 표시 → JSON 저장**.
+**구현 완료**:
+- **카탈로그 SYN 6종**(`cargo_catalog.csv`): 저밀도 합성 박스(SYN-01~06). 실측 박스는 무거워 7kg에 부피 못 채움 → SYN으로 "꽉 채운 버전" 가능. 폭 ≤10cm(트레이 21cm에 잘 들어가게).
+- **`CargoManifest.cs` + `Editor/ManifestEntryDrawer.cs`**: 인스펙터 **(화물 드롭다운, 개수)** 목록 / CSV → 화물 리스트. (id 타이핑 대신 카탈로그 선택)
+- **`BinPackerVisualizer`·`BinPackerRunner` 정리**: 랜덤·게이팅풀·진단 제거 → manifest 지정 → **Dense pack → 부피점유율(%) → JSON 저장**.
+- **`PlacementAgent` Option C**(보장된 완주) + **`useFixedManifest`**(단일 고정 케이스).
+- **`RefinementAgent.cs`(v2)** + `rl_config_refine.yaml`: 빈패커 배치서 시작 → 재배치.
+- **단일 주행 파일 분리**: `CargoRiskRecorder.resultsPath`(파일명만 넣으면 Data/Results 새 파일) + `DataLogger.combinedFileName`.
+
+**진행/결과**:
+- ✅ **from-scratch 단일케이스 PPO 성공**(`boxpack001_ppo`): guaranteedCompletion ON → **Mean Reward +1.13, Std ~0.09, ~25k 수렴.** Option C 검증. = **v1 baseline**.
+  - ⚠️ 단 이 run의 manifest는 **B-001**×8(씬 확인), boxpack001.json은 **B-004**×8 → run명과 실제 화물 불일치(B-001이 더 쉬움). binpacker 비교하려면 B-004로 재학습 필요.
+- ⚠️ **RefinementAgent(v2) 실행 → 보류** (2026-07-07, 상세 WORKLOG):
+  - 1차 실패: 씬에 **빈 base `Agent` 컴포넌트**가 잘못 추가돼 그놈이 스텝 돎(관측 0 경고·에피소드 무한) → 제거로 해결. (ML-Agents `Agent`는 추상 아님 — Add Component로 추가 가능한 함정)
+  - 2차(boxpack002_refine): **-0.455→-0.411(60k) flat.** 25스텝 중 무효 이동 ~20회 — "무효 회피"만 배우고 ΔFinal 신호는 페널티에 묻힘. 계측 3종(`Refine/ValidMoveRate`·`FinalImprovement`·`FinalAbsolute`)·셀 마스킹 추가했으나 **겹침은 브랜치 독립 마스킹으론 차단 불가**(조합 의존). 근본 해법=아이템 라운드로빈 — **v2는 여기서 보류**(폐기 아님).
+- 🔵 **현재 진행: v1 + CGS 단독 보상** (균등배치 최소 실험): RLTraining 씬 rewardConfig **wLE=0·wCGS=1·wSS=0**(LE 밀집 항이 "펼치기"를 벌하던 것 제거). run `b001_cgs` 1.14→1.325(35k) 건강 → **stepScale=0**(순수 터미널 CGS, 기대 0.6대→0.85+) 재실험 중.
+  - **판정은 곡선이 아니라 배치 모양**: Play 중 PlacementVisualizer 체크박스 켜서 Game 뷰 확인(보고 끄기). 낮고 고르게=성공 / 중앙 탑=CGS 해킹→펼침 항 추가.
+- ⭐ **위험 예측기 도착** (2026-07-07, playground 머지 000432d): `Assets/Scripts/Modeling/RiskModel.cs`·`RiskDisplay.cs`·`Assets/Resources/risk_model_treedata.json`. "예측기 오면 보상 교체" 전제가 현실이 됨.
 
 **▶ 다음 액션**:
-1. `3D BPP` 씬 `BinPackerVisualizer`: 인스펙터 `manifest`에 (예: SYN-01×5, SYN-03×8) 채우고 `packMode=Dense` → Play/우클릭 "Repack" → **부피점유율↑** 확인.
-2. 우클릭 **"Save Layout JSON"** → `Assets/Data/Cases_binpack/<name>.json`.
-3. (이후) 그 레이아웃 **동적 주행**(DynamicSceneController) → results.csv.
-4. (이후) **PPO** — 박스 풀 + Option C(3dbpp에 있음)로 학습. ※ RL은 3dbpp 브랜치 자산이라, 이 브랜치에서 RL까지 가려면 병합 전략 별도 결정.
+1. **stepScale=0 run 판정**: 곡선(0.85+ 수렴 여부) + **배치 모양 눈 확인** → 펼쳐졌으면 정적 RL 여기서 멈춤(더 튜닝은 헛수고 — 예측기 보상으로 교체 예정이므로).
+2. **⭐ `RiskModel.cs` 입력 피처 검토**: 예측기 입력 피처 = RL 보상/관측 피처 일관성(§1 크럭스). 예측기를 RL 보상으로 붙이는 인터페이스 설계.
+3. 학습된 배치 **동적 주행 1회**(layoutPath+resultsPath) → LTR/roll 확인 = "CGS 좋은 배치가 실제로 안전한가" 검증 → 최소 사이클 완주.
+4. (이후) manifest B-004 통일 → binpacker vs RL 공정 비교. v2(Refinement)는 라운드로빈 구조로 재도전 여지.
 
 ---
 
@@ -176,13 +189,15 @@
 
 | | 경로 |
 |---|---|
-| RL 에이전트 | `Assets/Scripts/Static/PlacementAgent.cs` |
-| 규칙 / 보상 | `Assets/Scripts/Static/RuleChecker.cs` · `RewardCalculator.cs` |
+| RL 에이전트 v1 (from-scratch, 현재 사용) | `Assets/Scripts/Static/PlacementAgent.cs` |
+| RL 에이전트 v2 (Refinement, 보류) | `Assets/Scripts/Static/RefinementAgent.cs` + `Docs/rl_config_refine.yaml` |
+| ⭐ 위험 예측기 (다른 담당자, 07-07 합류) | `Assets/Scripts/Modeling/RiskModel.cs` · `RiskDisplay.cs` · `Assets/Resources/risk_model_treedata.json` |
+| 규칙 / 보상 | `Assets/Scripts/Static/RuleChecker.cs` · `RewardCalculator.cs` ⚠️ RLTraining 씬은 wLE=0·wCGS=1·wSS=0 오버라이드 |
 | 빈패커 | `Assets/Scripts/Static/BinPacker.cs` · `BinPackerRunner.cs` · `BinPackerVisualizer.cs` |
-| 학습 설정 | `Docs/rl_config.yaml` |
-| demo(BC 교사) | `Assets/Demonstrations/PlacementAgentDe.demo` (1281셀용, +0.867) ⚠️ **격자 바꾸면 재기록 필수** |
-| A안 게이팅 풀 | `Assets/Data/gated_manifests.txt` (5000, type id 콤마구분) |
-| 학습 결과 | `results/<run-id>/` — `placement_v1`(4cm, −0.36) · `placement_v2_bc`(정체) · `placement_v3_gated`(정체 std0) |
-| 동적 결과 | `Assets/Data/Results/results.csv` (234행 주행완료: max_abs_ltr·rollover·risk_grade·roll·pitch·cargo_shift…) |
-| 위험 데이터셋 | `Assets/Data/Cases/` (**1000**) · 빈패커 baseline `Assets/Data/Cases_binpack/` (**200**) |
-| 씬 | `Assets/Scenes/RLTraining.unity`(학습·PlacementAgent) · `StaticSceneRoot.unity` · `3D BPP.unity`(빈패커/진단/풀생성 = `BinPackerVisualizer` 단독) |
+| 학습 설정 | **현재 사용 `Docs/rl_config_box.yaml`**(v1 단일케이스 순수 PPO) · `rl_config_refine.yaml`(v2, 보류) · `rl_config.yaml`(옛 게이팅+GAIL, 미사용) |
+| demo(BC 교사) | `Assets/Demonstrations/PlacementAgentDe.demo` (1281셀=1cm 시절, +0.867) ⚠️ **현재 격자 2cm(341셀)와 비호환. 현재 v1(boxpack)은 순수 PPO라 데모 미사용** |
+| A안 게이팅 풀 | `Assets/Data/gated_manifests.txt` (5000, type id 콤마구분) — 현재 v1은 useGatedPool=0이라 미사용 |
+| 학습 결과 | `results/<run-id>/` — **최신**: `boxpack001_ppo`(v1 baseline +1.13) · `b001_cgs`(CGS단독) · `b001_cgs_nostep`(stepScale=0) · `boxpack002_refine`(v2 flat −0.4) · `boxpack003_refine_mask`. **옛**: `placement_v1`(4cm −0.36)·`v2_bc`·`v3_gated`·`v4_grid2_gail`·`v5_beta_gail`(정체/붕괴) |
+| 동적 결과 | `Assets/Data/Results/results.csv` (235행 주행완료: max_abs_ltr·rollover·risk_grade·roll·pitch·cargo_shift…) |
+| 위험 데이터셋 | `Assets/Data/Cases/` (**500**) · 빈패커 baseline `Assets/Data/Cases_binpack/` (**102**) · 빈패커 테스트 `Assets/Data/TestCases/`(binpack001~) |
+| 씬 | `Assets/Scenes/RLTraining.unity`(학습·PlacementAgent v1) · `RefinementAgent.unity`(v2, 보류) · `StaticSceneRoot.unity`(정적) · `3D BPP.unity`(빈패커/진단/풀생성 = `BinPackerVisualizer` 단독) · `SampleScene.unity`(예측기 담당자) · `ConsoleTestScene.unity` |
