@@ -68,6 +68,12 @@ public class PlacementAgent : Agent
     [Tooltip("교사도 못 놓아 완주 실패 시 남은 화물 1개당 감점 (완주 유도, 단 −1.5 절벽 아님)")]
     public float unplacedPenalty = 0.1f;
 
+    [Header("배치 저장 (추론/검증용 — ⚠️ 학습 시엔 반드시 OFF)")]
+    [Tooltip("켜면 에피소드 완주(전부 배치) 시 배치를 Assets/Data/Results/<layoutOutName>.json 으로 저장(동적 주행 입력용). 매 에피소드 덮어씀. 학습 중엔 수만 번 쓰므로 반드시 끌 것.")]
+    public bool saveLayoutOnComplete = false;
+    [Tooltip("저장 파일명 (확장자 제외). Assets/Data/Results/ 아래.")]
+    public string layoutOutName = "rl_layout";
+
     [Header("디버그")]
     [Tooltip("켜면 배치/에피소드 결과를 콘솔에 찍음 (학습 시엔 끄기)")]
     public bool verboseLog = true;
@@ -336,6 +342,7 @@ public class PlacementAgent : Agent
         {
             var rf = reward.Final(placed);
             AddReward(rf.total);
+            if (saveLayoutOnComplete) SaveLayout();   // 추론/검증용: 완성배치를 주행 입력 JSON으로
             if (verboseLog) Debug.Log($"[에피소드 {episodeIdx} 완료] 전부 배치! 최종보상 {rf}");
             EndEpisode();
         }
@@ -381,6 +388,40 @@ public class PlacementAgent : Agent
         int n = 0;
         for (int i = 0; i < NumTypes; i++) n += remaining[i];
         return n;
+    }
+
+    /// <summary>현재 완성 배치를 동적 주행 입력용 JSON(CargoLayoutFile)으로 저장. 회전은 halfSize↔sizeM로 역산.</summary>
+    private void SaveLayout()
+    {
+        var file = new CargoLayoutFile
+        {
+            version = 1,
+            bed = new CargoLayoutBed { widthX = ruleConfig.trayLateralM, lengthZ = ruleConfig.trayLengthM, wallHeight = 0.06f },
+            cargo = new List<CargoLayoutEntry>()
+        };
+        foreach (var p in placed)
+        {
+            if (p.type == null) continue;
+            Vector3 s = p.type.sizeM;
+            float asIs    = Mathf.Abs(p.halfSize.x * 2f - s.x) + Mathf.Abs(p.halfSize.z * 2f - s.z);
+            float swapped = Mathf.Abs(p.halfSize.x * 2f - s.z) + Mathf.Abs(p.halfSize.z * 2f - s.x);
+            bool rot90 = swapped < asIs - 1e-5f;
+            file.cargo.Add(new CargoLayoutEntry
+            {
+                type = p.type.name,
+                localPos = p.center,
+                localEuler = rot90 ? new Vector3(0f, 90f, 0f) : Vector3.zero,
+                secured = true
+            });
+        }
+        string dir = Path.Combine(Application.dataPath, "Data/Results");
+        Directory.CreateDirectory(dir);
+        string path = Path.Combine(dir, layoutOutName + ".json");
+        File.WriteAllText(path, JsonUtility.ToJson(file, true));
+        Debug.Log($"[PlacementAgent] 배치 저장: {placed.Count}개 → {path}");
+#if UNITY_EDITOR
+        UnityEditor.AssetDatabase.Refresh();
+#endif
     }
 
     private void Fail(string reason = "")
