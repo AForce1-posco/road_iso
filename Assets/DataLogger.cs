@@ -18,8 +18,10 @@ public class DataLogger : MonoBehaviour
     [Header("Logging")]
     public float interval = 0.1f;
     public string fileName = "vehicle_dynamics_v3.csv";
-    [Tooltip("모든 Play가 이 한 파일에 계속 append됨 (Assets/Data/Results). 각 행의 RunID로 실행 구분, LayoutID로 케이스 구분")]
+    [Tooltip("모든 Play가 이 한 파일에 계속 append됨 (Assets/Data/Results). 각 행의 RunID로 실행 구분, LayoutID로 케이스 구분. ※ combinedChunkCases>0이면 이 이름 대신 청크 파일로 저장")]
     public string combinedFileName = "combined_timeseries_all.csv";
+    [Tooltip("통합 시계열을 N 케이스마다 새 파일로 분할 (100만 줄 방지). 0=분할 안 함(한 파일). 예: 50 → combined_timeseries_001-050.csv, 051-100.csv …")]
+    public int combinedChunkCases = 50;
     public bool logToConsole = false;
     public int flushEveryRows = 50;
 
@@ -48,7 +50,8 @@ public class DataLogger : MonoBehaviour
 
     private Rigidbody rb;
     private StreamWriter writer;         // 케이스별 파일
-    private StreamWriter combinedWriter; // 배치 통합 파일
+    private StreamWriter combinedWriter; // 배치 통합 파일 (또는 현재 청크)
+    private int runIndexInBatch;         // 배치 내 케이스 순번(1..) — 청크 롤오버용
     private bool recording;              // BeginRun~EndRun 사이에만 true
 
     private float logTimer;
@@ -109,8 +112,16 @@ public class DataLogger : MonoBehaviour
     {
         if (!string.IsNullOrEmpty(runId)) runID = runId;
         CargoPaths.EnsureAll();
-        // 고정 파일명 + append → 모든 실행이 한 파일에 누적. RunID 컬럼으로 실행 구분.
-        string path = Path.Combine(CargoPaths.ResultsDir, combinedFileName);
+        runIndexInBatch = 0;
+        // 분할 OFF(0) → 지금 한 파일 염. 분할 ON → 첫 케이스(BeginRun)에서 청크 파일 염.
+        if (combinedChunkCases <= 0)
+            OpenCombined(combinedFileName);
+    }
+
+    /// <summary>통합/청크 파일 하나 열기. append 모드, 새 파일이면 헤더 1줄.</summary>
+    private void OpenCombined(string name)
+    {
+        string path = Path.Combine(CargoPaths.ResultsDir, name);
         try
         {
             bool isNew = !File.Exists(path) || new FileInfo(path).Length == 0;
@@ -139,6 +150,16 @@ public class DataLogger : MonoBehaviour
     /// <summary>케이스 주행 시작: LayoutID=케이스명, 화물 메타 세팅, 케이스별 파일 열고 샘플링 시작.</summary>
     public void BeginRun(string caseName, int cargoCount, float totalMassKg, float securedFrac)
     {
+        // 통합 파일 분할: 배치 내 케이스 순번 기준 N개마다 새 청크 파일로 롤오버
+        runIndexInBatch++;
+        if (combinedChunkCases > 0 && (runIndexInBatch - 1) % combinedChunkCases == 0)
+        {
+            if (combinedWriter != null) { combinedWriter.Flush(); combinedWriter.Close(); combinedWriter = null; }
+            int start = runIndexInBatch;
+            int end = start + combinedChunkCases - 1;
+            OpenCombined($"combined_timeseries_{start:D3}-{end:D3}.csv");
+        }
+
         if (!string.IsNullOrEmpty(caseName)) layoutID = caseName;
         curCargoCount = cargoCount;
         curTotalMassKg = totalMassKg;
