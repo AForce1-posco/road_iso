@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "mode": "risky",
+  "profile": "risk_heavy",
+  "bed": {
+    "widthX": 0.21,
+    "lengthZ": 0.61,
+    "wallHeight": 0.06
+  },
+  "cargo": [
+    {
+      "type": "코일 C-001",
+      "localPos": {
+        "x": 0.01,
+        "y": 0.02,
+        "z": -0.05
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-007",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.035,
+        "z": 0.18
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    }
+  ]
+}

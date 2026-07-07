@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "mode": "risky",
-  "profile": "risk_eccentric",
+  "composition": "pipe_only",
+  "cogMode": "low_center",
+  "fill": 0.064,
+  "totalMass": 4.2,
+  "cargoCount": 5,
+  "maxHeight": 0.04,
+  "cog": {
+    "x": 0.0033,
+    "y": 0.0239,
+    "z": -0.109
+  },
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -9,29 +18,71 @@
   },
   "cargo": [
     {
-      "type": "박스 B-001",
+      "type": "스틸 파이프 번들(2)",
       "localPos": {
-        "x": -0.04,
-        "y": 0.03,
-        "z": 0.15
+        "x": 0.09,
+        "y": 0.015,
+        "z": -0.14
       },
       "localEuler": {
-        "x": 0.0,
+        "x": 90.0,
         "y": 0.0,
         "z": 0.0
       },
       "secured": true
     },
     {
-      "type": "박스 B-006",
+      "type": "배관 파이프 S-002",
       "localPos": {
-        "x": -0.05,
-        "y": 0.045,
-        "z": -0.1
+        "x": 0.0,
+        "y": 0.03,
+        "z": -0.09
       },
       "localEuler": {
-        "x": 0.0,
-        "y": 90.0,
+        "x": 90.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "스틸 파이프 번들(3)",
+      "localPos": {
+        "x": -0.07,
+        "y": 0.02,
+        "z": -0.02
+      },
+      "localEuler": {
+        "x": 90.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "스틸 파이프 번들(3)",
+      "localPos": {
+        "x": 0.05,
+        "y": 0.02,
+        "z": -0.17
+      },
+      "localEuler": {
+        "x": 90.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "스틸 파이프 번들(3)",
+      "localPos": {
+        "x": -0.04,
+        "y": 0.02,
+        "z": -0.17
+      },
+      "localEuler": {
+        "x": 90.0,
+        "y": 0.0,
         "z": 0.0
       },
       "secured": true

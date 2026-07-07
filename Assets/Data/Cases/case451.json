@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "mode": "risky",
-  "profile": "risk_eccentric",
+  "composition": "mixed",
+  "cogMode": "low_center",
+  "fill": 0.414,
+  "totalMass": 6.986,
+  "cargoCount": 29,
+  "maxHeight": 0.27,
+  "cog": {
+    "x": -0.0049,
+    "y": 0.1243,
+    "z": 0.0213
+  },
   "bed": {
     "widthX": 0.21,
     "lengthZ": 0.61,
@@ -9,11 +18,403 @@
   },
   "cargo": [
     {
-      "type": "코일 C-001",
+      "type": "합성 경량패널",
       "localPos": {
-        "x": 0.04,
-        "y": 0.02,
-        "z": 0.01
+        "x": 0.05,
+        "y": 0.03,
+        "z": -0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.07,
+        "y": 0.04,
+        "z": -0.17
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량패널",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.03,
+        "z": 0.11
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-003",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.03,
+        "z": -0.09
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량패널",
+      "localPos": {
+        "x": -0.01,
+        "y": 0.03,
+        "z": 0.23
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량패널",
+      "localPos": {
+        "x": 0.01,
+        "y": 0.03,
+        "z": -0.01
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.065,
+        "z": 0.11
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량패널",
+      "localPos": {
+        "x": 0.05,
+        "y": 0.07,
+        "z": -0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-004",
+      "localPos": {
+        "x": 0.01,
+        "y": 0.07,
+        "z": -0.01
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량중형",
+      "localPos": {
+        "x": 0.05,
+        "y": 0.14,
+        "z": -0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.06,
+        "y": 0.04,
+        "z": -0.26
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 90.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-004",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.1,
+        "z": 0.11
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.07,
+        "y": 0.1,
+        "z": -0.17
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.05,
+        "y": 0.22,
+        "z": -0.21
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.14,
+        "z": 0.11
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.175,
+        "z": 0.11
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-006",
+      "localPos": {
+        "x": 0.0,
+        "y": 0.225,
+        "z": 0.11
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 표준큐브",
+      "localPos": {
+        "x": -0.01,
+        "y": 0.1,
+        "z": 0.23
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": 0.01,
+        "y": 0.12,
+        "z": -0.01
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 표준큐브",
+      "localPos": {
+        "x": 0.01,
+        "y": 0.2,
+        "z": -0.01
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.07,
+        "y": 0.16,
+        "z": -0.17
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.01,
+        "y": 0.18,
+        "z": 0.23
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": 0.01,
+        "y": 0.265,
+        "z": -0.01
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.01,
+        "y": 0.23,
+        "z": 0.23
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "합성 경량소형",
+      "localPos": {
+        "x": -0.07,
+        "y": 0.22,
+        "z": -0.17
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "포대 T-001",
+      "localPos": {
+        "x": -0.01,
+        "y": 0.265,
+        "z": 0.23
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.07,
+        "z": -0.09
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-003",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.11,
+        "z": -0.09
+      },
+      "localEuler": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "secured": true
+    },
+    {
+      "type": "박스 B-001",
+      "localPos": {
+        "x": -0.02,
+        "y": 0.15,
+        "z": -0.09
       },
       "localEuler": {
         "x": 0.0,
