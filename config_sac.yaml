@@ -1,0 +1,26 @@
+behaviors:
+  PlacementAgent:
+    trainer_type: sac
+    hyperparameters:
+      batch_size: 256
+      buffer_size: 100000
+      learning_rate: 2.0e-4
+      learning_rate_schedule: constant
+      buffer_init_steps: 3000
+      init_entcoef: 0.15
+      tau: 0.005
+      steps_per_update: 1
+      save_replay_buffer: false
+    network_settings:
+      normalize: false
+      hidden_units: 256
+      num_layers: 2
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    max_steps: 1000000
+    time_horizon: 64
+    summary_freq: 2000
+    keep_checkpoints: 5
+    checkpoint_interval: 200000

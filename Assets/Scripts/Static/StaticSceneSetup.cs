@@ -23,8 +23,25 @@ public class StaticSceneSetup : MonoBehaviour
     [Tooltip("체크 시 Play하자마자 자동으로 불러옴 (버튼 안 눌러도 됨)")]
     public bool autoLoadOnPlay = false;
 
+    private bool initialized;
+
     void Awake()
     {
+        Initialize();
+    }
+
+    void Start()
+    {
+        Initialize();
+    }
+
+    private void Initialize()
+    {
+        if (initialized) return;
+        initialized = true;
+
+        Debug.Log("[StaticSceneSetup] initializing static scene bootstrap");
+
         if (Camera.main == null)
         {
             var camGo = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
@@ -41,7 +58,8 @@ public class StaticSceneSetup : MonoBehaviour
             lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
         }
 
-        var root = new GameObject("StaticSceneRoot");
+        var existingRoot = GameObject.Find("StaticSceneRoot");
+        var root = existingRoot != null ? existingRoot : new GameObject("StaticSceneRoot");
 
         var placer = root.AddComponent<CargoPlacer>();
         placer.panelShift = panelShift;
@@ -65,5 +83,38 @@ public class StaticSceneSetup : MonoBehaviour
         ui.placer = placer;
         ui.cogMarker = cog;
         ui.safetyZone = zone;
+
+        var agent = root.AddComponent<PlacementAgent>();
+        agent.cols = 6;
+        agent.rows = 16;
+        agent.manifestMin = 3;
+        agent.manifestMax = 5;
+        agent.autoRunHeuristicEpisodes = false;
+        agent.autoRunEpisodeCount = 10;
+        agent.autoRunStepDelay = 0.01f;
+        agent.verboseLog = true;
+
+        var runner = root.AddComponent<PlacementLoopRunner>();
+        runner.agent = agent;
+        runner.episodeCount = 10;
+        runner.stepDelay = 0.01f;
+        runner.runOnStart = false;
+
+        var recorder = root.AddComponent<PlacementTrainingRecorder>();
+        recorder.agent = agent;
+
+        var chart = root.AddComponent<PlacementTrainingChart>();
+        recorder.chart = chart;
+
+        var summary = root.AddComponent<PlacementRunSummary>();
+        summary.recorder = recorder;
+
+        var optimizer = root.AddComponent<PlacementGAOptimizer>();
+        optimizer.agent = agent;
+        optimizer.populationSize = 6;
+        optimizer.generations = 3;
+        optimizer.mutationRate = 0.3f;
+
+        Debug.Log("[StaticSceneSetup] bootstrap completed");
     }
 }

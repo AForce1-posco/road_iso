@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.MLAgents;
 using Unity.MLAgents.Actuators;
@@ -38,10 +39,27 @@ public class PlacementAgent : Agent
     public float invalidPenalty = 0.05f;
     public int maxInvalidPerEpisode = 20;
 
+    [Header("자동 루프 실행")]
+    public bool autoRunHeuristicEpisodes = false;
+    public int autoRunEpisodeCount = 10;
+    public float autoRunStepDelay = 0.01f;
+
     [Header("디버그")]
     [Tooltip("켜면 배치/에피소드 결과를 콘솔에 찍음 (학습 시엔 끄기)")]
     public bool verboseLog = true;
+
+    public event System.Action<PlacementEpisodeMetrics> EpisodeFinished;
+    public PlacementEpisodeMetrics LastEpisodeMetrics { get; private set; }
+    public float CumulativeReward { get; private set; }
+    public int TotalValidPlacements { get; private set; }
+    public int TotalInvalidPlacements { get; private set; }
+    public bool IsEpisodeActive => currentEpisodeActive;
+
     private int episodeIdx;
+    private float episodeReward;
+    private int episodeValidPlacements;
+    private int episodeInvalidPlacements;
+    private int episodeStepCount;
 
     // ── 내부 상태 ──
     private RuleChecker rules;
@@ -52,6 +70,7 @@ public class PlacementAgent : Agent
     private int invalidCount;
     private int placedTarget;                       // 이번 에피소드 총 배치 목표 수
     private bool setupDone;                          // Awake/Initialize 중복 방지
+    private bool currentEpisodeActive;
 
     private float HalfX => ruleConfig.trayLateralM * 0.5f;
     private float HalfZ => ruleConfig.trayLengthM * 0.5f;
@@ -68,13 +87,27 @@ public class PlacementAgent : Agent
 
     public override void Initialize() => Setup();
 
+    public void SetupForRuntime() => Setup();
+    public void BeginEpisodeForRuntime() => OnEpisodeBegin();
+
+    public void ApplyRuntimeConfig(RewardConfig rewardCfg = null, RuleConfig ruleCfg = null)
+    {
+        if (rewardCfg != null) rewardConfig = rewardCfg;
+        if (ruleCfg != null) ruleConfig = ruleCfg;
+
+        if (rewardConfig == null) rewardConfig = new RewardConfig();
+        if (ruleConfig == null) ruleConfig = new RuleConfig();
+
+        rules = new RuleChecker(ruleConfig);
+        reward = new RewardCalculator(rewardConfig, ruleConfig);
+    }
+
     private void Setup()
     {
         if (setupDone) return;
         setupDone = true;
 
-        rules = new RuleChecker(ruleConfig);
-        reward = new RewardCalculator(rewardConfig, ruleConfig);
+        ApplyRuntimeConfig(rewardConfig, ruleConfig);
 
         var cat = new Dictionary<string, CargoType>();
         foreach (var t in CargoCatalog.CreateDefault()) if (t != null) cat[t.id] = t;
@@ -90,11 +123,45 @@ public class PlacementAgent : Agent
         Debug.Log($"[PlacementAgent] obs={ObsSize}, action=({NumTypes},{NumCells},2), pool={NumTypes}종");
     }
 
+    private void Start()
+    {
+        if (autoRunHeuristicEpisodes)
+            StartCoroutine(AutoRunHeuristicEpisodes());
+    }
+
+    private IEnumerator AutoRunHeuristicEpisodes()
+    {
+        Setup();
+        for (int ep = 0; ep < autoRunEpisodeCount; ep++)
+        {
+            OnEpisodeBegin();
+            while (currentEpisodeActive)
+            {
+                var actions = new ActionBuffers(new float[0], new int[3]);
+                Heuristic(actions);
+                OnActionReceived(actions);
+
+                if (autoRunStepDelay > 0f)
+                    yield return new WaitForSeconds(autoRunStepDelay);
+                else
+                    yield return null;
+            }
+        }
+
+        if (verboseLog)
+            Debug.Log($"[PlacementAgent] 자동 루프 완료: {autoRunEpisodeCount} 에피소드");
+    }
+
     public override void OnEpisodeBegin()
     {
+        currentEpisodeActive = true;
         placed.Clear();
         invalidCount = 0;
         remaining = new int[NumTypes];
+        episodeReward = 0f;
+        episodeValidPlacements = 0;
+        episodeInvalidPlacements = 0;
+        episodeStepCount = 0;
 
         // 랜덤 manifest: 총 manifestMin~Max개를 풀에서 무작위 종류로
         placedTarget = Random.Range(manifestMin, manifestMax + 1);
@@ -186,7 +253,11 @@ public class PlacementAgent : Agent
         placed.Add(cand);
         remaining[typeIdx]--;
         invalidCount = 0;
-        AddReward(reward.Step(placed)); // 스텝 shaping
+        episodeValidPlacements++;
+        episodeStepCount++;
+        float stepReward = reward.Step(placed);
+        episodeReward += stepReward;
+        AddReward(stepReward); // 스텝 shaping
 
         if (verboseLog)
             Debug.Log($"  ✔ {type.id} 배치 @ 셀({c},{r}) rot{rot} → 높이 {cand.Top:F3}m | 누적 {placed.Count}/{placedTarget}개");
@@ -195,20 +266,60 @@ public class PlacementAgent : Agent
         if (AllPlaced())
         {
             var rf = reward.Final(placed);
-            AddReward(rf.total);
+            float finalReward = rf.total;
+            episodeReward += finalReward;
+            AddReward(finalReward);
+            PublishEpisodeMetrics("completed");
             if (verboseLog) Debug.Log($"[에피소드 {episodeIdx} 완료] 전부 배치! 최종보상 {rf}");
+            FinishEpisode();
             EndEpisode();
         }
     }
 
     private void Fail()
     {
-        AddReward(-invalidPenalty);
+        episodeInvalidPlacements++;
+        float penalty = -invalidPenalty;
+        episodeReward += penalty;
+        AddReward(penalty);
         if (++invalidCount >= maxInvalidPerEpisode)
         {
-            AddReward(-0.5f); // 반복 실패 = 큰 감점 후 종료
+            float terminalPenalty = -0.5f;
+            episodeReward += terminalPenalty;
+            AddReward(terminalPenalty); // 반복 실패 = 큰 감점 후 종료
+            PublishEpisodeMetrics("failed");
+            FinishEpisode();
             EndEpisode();
         }
+    }
+
+    private void FinishEpisode()
+    {
+        currentEpisodeActive = false;
+    }
+
+    private void PublishEpisodeMetrics(string reason)
+    {
+        LastEpisodeMetrics = new PlacementEpisodeMetrics
+        {
+            episodeIndex = episodeIdx,
+            reason = reason,
+            totalReward = episodeReward,
+            validPlacements = episodeValidPlacements,
+            invalidPlacements = episodeInvalidPlacements,
+            stepCount = episodeStepCount,
+            stepScale = rewardConfig.stepScale,
+            wLE = rewardConfig.wLE,
+            wCGS = rewardConfig.wCGS,
+            wSS = rewardConfig.wSS,
+            supportRatioMin = ruleConfig.supportRatioMin
+        };
+
+        CumulativeReward += episodeReward;
+        TotalValidPlacements += episodeValidPlacements;
+        TotalInvalidPlacements += episodeInvalidPlacements;
+
+        EpisodeFinished?.Invoke(LastEpisodeMetrics);
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)

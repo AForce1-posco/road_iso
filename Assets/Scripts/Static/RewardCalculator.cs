@@ -44,7 +44,8 @@ public class RewardCalculator
         float le = LoadingEfficiency(placed);
         float cgs = CogStability(placed);
         float ss = StackingStability(placed);
-        float total = cfg.wLE * le + cfg.wCGS * cgs + cfg.wSS * ss;
+        float completionBonus = 0.25f;
+        float total = cfg.wLE * le + cfg.wCGS * cgs + cfg.wSS * ss + completionBonus;
         return new Reward { total = total, le = le, cgs = cgs, ss = ss };
     }
 
@@ -53,9 +54,10 @@ public class RewardCalculator
     public float Step(IReadOnlyList<RuleChecker.PlacedItem> placed)
     {
         if (placed == null || placed.Count == 0) return 0f;
-        float cgs = CogStability(placed);      // 중앙·낮음
-        float compact = GridCompactness(placed); // 밀집
-        return cfg.stepScale * (0.7f * cgs + 0.3f * compact);
+        float cgs = CogStability(placed);
+        float compact = GridCompactness(placed);
+        float lowHeight = LowHeightScore(placed);
+        return cfg.stepScale * (0.5f * cgs + 0.25f * compact + 0.25f * lowHeight);
     }
 
     // ── 목적함수 1: Loading Efficiency (0~1) ─────────────────────────────────
@@ -124,7 +126,8 @@ public class RewardCalculator
         if (placed.Count == 0) return 1f;
         float heavyBelow = HeavyBelowScore(placed);
         float flat = SurfaceFlatness(placed);
-        return Clamp01(cfg.ssHeavyW * heavyBelow + cfg.ssFlatW * flat);
+        float lowHeight = LowHeightScore(placed);
+        return Clamp01(cfg.ssHeavyW * heavyBelow + cfg.ssFlatW * flat + 0.2f * lowHeight);
     }
 
     // 무거운 것 아래: 높이(center.y)와 질량의 음의 상관 → 무거울수록 낮으면 1
@@ -149,6 +152,16 @@ public class RewardCalculator
         float var = 0f; foreach (var p in placed) var += (p.Top - mean) * (p.Top - mean);
         float std = Mathf.Sqrt(var / placed.Count);
         return 1f - Clamp01(std / cfg.flatnessRef); // 편차 flatnessRef(기본 0.1m)면 0점
+    }
+
+    float LowHeightScore(IReadOnlyList<RuleChecker.PlacedItem> placed)
+    {
+        if (placed.Count == 0) return 1f;
+        float maxHeight = 0f;
+        foreach (var p in placed)
+            maxHeight = Mathf.Max(maxHeight, p.Top - FloorTop);
+        float ratio = HeightLimit > 1e-6f ? 1f - Clamp01(maxHeight / HeightLimit) : 1f;
+        return Clamp01(ratio);
     }
 
     // ── 헬퍼 ────────────────────────────────────────────────────────────────

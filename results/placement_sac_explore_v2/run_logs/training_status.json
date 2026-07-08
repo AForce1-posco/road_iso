@@ -1,0 +1,29 @@
+{
+    "PlacementAgent": {
+        "checkpoints": [
+            {
+                "steps": 5,
+                "file_path": "results/placement_sac_explore_v2/PlacementAgent/PlacementAgent-5.onnx",
+                "reward": -1.4562182426452637,
+                "creation_time": 1783198343.482722,
+                "auxillary_file_paths": [
+                    "results/placement_sac_explore_v2/PlacementAgent/PlacementAgent-5.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 5,
+            "file_path": "results/placement_sac_explore_v2/PlacementAgent.onnx",
+            "reward": -1.4562182426452637,
+            "creation_time": 1783198343.482722,
+            "auxillary_file_paths": [
+                "results/placement_sac_explore_v2/PlacementAgent/PlacementAgent-5.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "0.30.0",
+        "torch_version": "1.11.0"
+    }
+}

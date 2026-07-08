@@ -1,0 +1,47 @@
+{
+    "PlacementAgent": {
+        "checkpoints": [
+            {
+                "steps": 1575,
+                "file_path": "results/placement_sac_init1000_ml30/PlacementAgent/PlacementAgent-1575.onnx",
+                "reward": null,
+                "creation_time": 1783196357.905761,
+                "auxillary_file_paths": [
+                    "results/placement_sac_init1000_ml30/PlacementAgent/PlacementAgent-1575.pt"
+                ]
+            },
+            {
+                "steps": 20394,
+                "file_path": "results/placement_sac_init1000_ml30/PlacementAgent/PlacementAgent-20394.onnx",
+                "reward": null,
+                "creation_time": 1783196721.698258,
+                "auxillary_file_paths": [
+                    "results/placement_sac_init1000_ml30/PlacementAgent/PlacementAgent-20394.pt"
+                ]
+            },
+            {
+                "steps": 41651,
+                "file_path": "results/placement_sac_init1000_ml30/PlacementAgent/PlacementAgent-41651.onnx",
+                "reward": null,
+                "creation_time": 1783197287.4591281,
+                "auxillary_file_paths": [
+                    "results/placement_sac_init1000_ml30/PlacementAgent/PlacementAgent-41651.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 41651,
+            "file_path": "results/placement_sac_init1000_ml30/PlacementAgent.onnx",
+            "reward": null,
+            "creation_time": 1783197287.4591281,
+            "auxillary_file_paths": [
+                "results/placement_sac_init1000_ml30/PlacementAgent/PlacementAgent-41651.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "0.30.0",
+        "torch_version": "1.11.0"
+    }
+}
