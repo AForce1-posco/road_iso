@@ -26,6 +26,13 @@ public class CargoLayoutEntry
 public class CargoLayoutFile
 {
     public int version = 1;
+
+    // 생성기가 미리 계산해 저장하는 배치 요약(있으면 그대로 사용). 실축(m, kg). 구버전 JSON엔 없을 수 있음.
+    public Vector3 cog;
+    public float maxHeight;
+    public float totalMass;
+    public int cargoCount;
+
     public CargoLayoutBed bed;
     public List<CargoLayoutEntry> cargo = new List<CargoLayoutEntry>();
 

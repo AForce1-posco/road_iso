@@ -75,6 +75,11 @@ public class DataLogger : MonoBehaviour
     private float curTotalMassKg;
     private float curSecuredFrac;
 
+    // 정적 배치 요약 (BeginRun에서 cargoLoader로부터 세팅) — 실축·트레이 로컬
+    private Vector3 curCoG;
+    private float curMaxHeight;
+    private Vector3 curInertia;
+
     private static readonly CultureInfo CsvCulture = CultureInfo.InvariantCulture;
 
     // 케이스별·통합 파일 공통 헤더. origin/main 컬럼 전부 유지 + Cargo* 3개 추가(조건 블록 뒤).
@@ -94,7 +99,8 @@ public class DataLogger : MonoBehaviour
         "LeftWheelLift,RightWheelLift,AnyWheelLift," +
         "FL_ForwardSlip,FR_ForwardSlip,RL_ForwardSlip,RR_ForwardSlip," +
         "FL_SideSlip,FR_SideSlip,RL_SideSlip,RR_SideSlip," +
-        "MaxForwardSlip,MaxSideSlip,LegacyRolloverRisk,IsRollover";
+        "MaxForwardSlip,MaxSideSlip,LegacyRolloverRisk,IsRollover," +
+        "CogX,CogY,CogZ,MaxHeightM,InertiaXX,InertiaYY,InertiaZZ";
 
     void Start()
     {
@@ -164,6 +170,20 @@ public class DataLogger : MonoBehaviour
         curCargoCount = cargoCount;
         curTotalMassKg = totalMassKg;
         curSecuredFrac = securedFrac;
+
+        // 정적 배치 요약(CoG·최고높이·관성모멘트)을 로더에서 가져와 매 행에 기록
+        if (cargoLoader != null)
+        {
+            curCoG = cargoLoader.LayoutCoG;
+            curMaxHeight = cargoLoader.LayoutMaxHeight;
+            curInertia = cargoLoader.LayoutInertia;
+        }
+        else
+        {
+            curCoG = Vector3.zero;
+            curMaxHeight = 0f;
+            curInertia = Vector3.zero;
+        }
 
         // 케이스별 상태 리셋 (각 케이스가 SampleIndex 0 · RunTime 0에서 시작)
         sampleIndex = 0;
@@ -319,7 +339,9 @@ public class DataLogger : MonoBehaviour
             F(fl.forwardSlip), F(fr.forwardSlip), F(rl.forwardSlip), F(rr.forwardSlip),
             F(fl.sideSlip), F(fr.sideSlip), F(rl.sideSlip), F(rr.sideSlip),
             F(maxForwardSlip), F(maxSideSlip),
-            F(legacyRisk), isRollover.ToString(CsvCulture));
+            F(legacyRisk), isRollover.ToString(CsvCulture),
+            F(curCoG.x), F(curCoG.y), F(curCoG.z), F(curMaxHeight),
+            F(curInertia.x), F(curInertia.y), F(curInertia.z));
 
         if (writer != null) writer.WriteLine(line);
         if (combinedWriter != null) combinedWriter.WriteLine(line);

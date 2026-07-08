@@ -179,6 +179,50 @@ public static class LoadCalculator
         return halfTrack / cogHeight;
     }
 
+    /// <summary>관성모멘트 계산용 화물 1개(실축). sizeM=경계상자[m], localPos=트레이로컬[m], localEuler=[deg].</summary>
+    public struct CargoInertiaItem
+    {
+        public float mass;         // kg
+        public Vector3 sizeM;      // m (bounding box)
+        public Vector3 localPos;   // m (트레이 로컬)
+        public Vector3 localEuler; // deg
+    }
+
+    /// <summary>
+    /// 적재물 전체 관성텐서의 대각성분(kg·m²)을 <b>적재물 CoG 기준·적재함 축 정렬</b>로 반환.
+    /// 각 화물=균일밀도 직육면체(자체 관성) + 회전(Unity Euler) + 평행축정리로 CoG 이동 후 합산.
+    /// 반환 (Ixx=롤축, Iyy=요축, Izz=피치축). 배치 시계열 CSV의 InertiaXX/YY/ZZ와 동일 정의.
+    /// </summary>
+    public static Vector3 LayoutInertiaDiag(IReadOnlyList<CargoInertiaItem> items, Vector3 cog)
+    {
+        float Ixx = 0f, Iyy = 0f, Izz = 0f;
+        if (items == null) return Vector3.zero;
+
+        foreach (var it in items)
+        {
+            float m = it.mass;
+            float dx = it.sizeM.x, dy = it.sizeM.y, dz = it.sizeM.z;
+            // 자체 관성(body축 대각)
+            float ibx = m / 12f * (dy * dy + dz * dz);
+            float iby = m / 12f * (dx * dx + dz * dz);
+            float ibz = m / 12f * (dx * dx + dy * dy);
+
+            // 회전 정렬: Iw = R · diag(ibx,iby,ibz) · Rᵀ  (상위 3x3만 사용)
+            Matrix4x4 R = Matrix4x4.Rotate(Quaternion.Euler(it.localEuler));
+            float iwXX = R[0, 0] * ibx * R[0, 0] + R[0, 1] * iby * R[0, 1] + R[0, 2] * ibz * R[0, 2];
+            float iwYY = R[1, 0] * ibx * R[1, 0] + R[1, 1] * iby * R[1, 1] + R[1, 2] * ibz * R[1, 2];
+            float iwZZ = R[2, 0] * ibx * R[2, 0] + R[2, 1] * iby * R[2, 1] + R[2, 2] * ibz * R[2, 2];
+
+            // 평행축 정리: + m(|d|²δ − d⊗d), 대각만 → + m(|d|² − dₐ²)
+            Vector3 d = it.localPos - cog;
+            float d2 = d.sqrMagnitude;
+            Ixx += iwXX + m * (d2 - d.x * d.x);
+            Iyy += iwYY + m * (d2 - d.y * d.y);
+            Izz += iwZZ + m * (d2 - d.z * d.z);
+        }
+        return new Vector3(Ixx, Iyy, Izz);
+    }
+
     private static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
     {
         Vector2 ab = b - a;

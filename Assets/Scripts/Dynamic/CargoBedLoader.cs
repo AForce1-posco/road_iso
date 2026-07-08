@@ -79,6 +79,14 @@ public class CargoBedLoader : MonoBehaviour
 
     public IReadOnlyList<LoadedCargo> Loaded => loaded;
     public string LastLoadedPath { get; private set; }
+
+    // ── 정적 배치 요약(실축, 트레이 로컬 좌표). Load() 시점에 계산 → DataLogger가 CSV 컬럼으로 기록 ──
+    /// <summary>적재물 무게중심 (m, 트레이 로컬).</summary>
+    public Vector3 LayoutCoG { get; private set; }
+    /// <summary>적재 최고 높이 (m).</summary>
+    public float LayoutMaxHeight { get; private set; }
+    /// <summary>적재물 관성텐서 대각 (kg·m², CoG 기준·트레이 축) = (Ixx,Iyy,Izz).</summary>
+    public Vector3 LayoutInertia { get; private set; }
     /// <summary>트레이 바닥 반폭(x)·반길이(z), 스케일 적용된 m. 이탈 판정용.</summary>
     public Vector2 TrayHalfXZ { get; private set; } = new Vector2(3.2f, 1.2f);
     private readonly List<LoadedCargo> loaded = new List<LoadedCargo>();
@@ -169,10 +177,18 @@ public class CargoBedLoader : MonoBehaviour
             (file.bed != null ? file.bed.lengthZ : 0.24f) * 0.5f * scale);
         if (buildTray) BuildTray(file.bed);
 
+        // 배치 요약(관성모멘트)용 화물 목록 — 실축(스케일 미적용) 값으로 수집
+        var inertiaItems = new System.Collections.Generic.List<LoadCalculator.CargoInertiaItem>();
+
         foreach (CargoLayoutEntry e in file.cargo)
         {
             CargoType t = FindType(e.type);
             if (t == null) { Debug.LogWarning($"화물 종류 '{e.type}' 없음 — 건너뜀"); continue; }
+
+            inertiaItems.Add(new LoadCalculator.CargoInertiaItem
+            {
+                mass = t.massKg, sizeM = t.sizeM, localPos = e.localPos, localEuler = e.localEuler
+            });
 
             // 인벤토리 진열품 복제 우선 (씬에서 커스텀한 모양 반영), 없으면 팩토리 생성
             GameObject go = inventory != null ? inventory.CreateInstance(t.name, scale) : null;
@@ -206,10 +222,42 @@ public class CargoBedLoader : MonoBehaviour
             });
         }
 
+        ComputeLayoutFeatures(file, inertiaItems);
+
         IgnoreTruckBodyCollisions();
         ApplyLoadToTruck();
         Debug.Log($"트럭 적재 완료: {loaded.Count}개 (scale ×{scale}, massScale ×{massScale})\n적재 파일: {path}");
         return loaded.Count;
+    }
+
+    /// <summary>
+    /// 정적 배치 요약(CoG·최고높이·관성모멘트)을 실축·트레이 로컬 좌표로 계산해 저장.
+    /// CoG/최고높이는 JSON에 저장된 값(생성기 계산) 우선 사용, 없으면 화물 목록에서 산정.
+    /// </summary>
+    private void ComputeLayoutFeatures(CargoLayoutFile file, System.Collections.Generic.List<LoadCalculator.CargoInertiaItem> items)
+    {
+        // CoG·최고높이: 신버전 JSON(cargoCount>0)이면 저장값 그대로(= 배달한 시계열 CSV와 동일), 아니면 계산
+        if (file != null && file.cargoCount > 0)
+        {
+            LayoutCoG = file.cog;
+            LayoutMaxHeight = file.maxHeight;
+        }
+        else
+        {
+            float totalMass = 0f;
+            Vector3 weighted = Vector3.zero;
+            float top = 0f;
+            foreach (var it in items)
+            {
+                totalMass += it.mass;
+                weighted += it.localPos * it.mass;
+                top = Mathf.Max(top, it.localPos.y + it.sizeM.y * 0.5f); // 회전 미고려 근사
+            }
+            LayoutCoG = totalMass > 0f ? weighted / totalMass : Vector3.zero;
+            LayoutMaxHeight = top;
+        }
+
+        LayoutInertia = LoadCalculator.LayoutInertiaDiag(items, LayoutCoG);
     }
 
     /// <summary>
