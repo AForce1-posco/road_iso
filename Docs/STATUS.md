@@ -2,9 +2,26 @@
 
 > **이 파일부터 읽으세요.** 채팅/세션이 바뀌어도 이 한 장이면 "지금 어디까지 왔고, 무엇을 하는 중이고, 다음에 뭘 하면 되는지"를 파악할 수 있게 유지한다.
 > 세부는 각 전문 문서로 링크. **코드가 항상 최종 진실**(문서와 코드가 다르면 코드 우선, 그리고 이 문서를 고칠 것).
-> 최종 갱신: **2026-07-08 (파이프라인 한 바퀴 완주 · 정적 CGS≠동적안전 실증 · 문서 동기화)**.
+> 최종 갱신: **2026-07-09 (B 사이클 완결 · surrogate(p95) 보상 RL · refinement > from-scratch 검증)**.
 
 > ⚠️ **브랜치**: 현재 체크아웃 = **`0707_playground`** (= minimal-cycle-boxes 계열, **§3b가 현재**). 과거 1281셀 탐색벽/Option C 사투는 **`3dbpp` 브랜치 보존** — **아래 §3은 "역사"** (현재 아님). 복귀 `git checkout 3dbpp`.
+
+---
+
+## ⚡ 최신 (2026-07-09) — B 사이클 완결: surrogate 보상 RL로 baseline보다 안전한 배치 발견
+
+| 항목 | 값 | 비고 |
+|---|---|---|
+| **보상 = surrogate** | `-리스크(p95\|LTR\|)` (배치→동적위험 예측기) | 정적 CGS proxy 졸업 → 실측 주행 기반 예측기 보상으로 전환 |
+| **surrogate 모델** | **RandomForest**(머신러닝, DL 아님), 13피처, 라벨 p95, **R²0.96** | `Resources/layout_risk_p95.json`, `LayoutRiskModel.cs`가 트리JSON 로드(**스왑가능**: JSON만 교체) |
+| **학습 데이터** | 같은 manifest 배치 86개(case9001~9086, `gen_layouts.py`) 주행 | ⚠️ **results.csv 요약버그**(max_abs_ltr=0) — 라벨은 **시계열 `LTR_Total` 직접계산 필수** |
+| **from-scratch** `b_p95` | PlacementAgent+useSurrogateReward, 300k, 주행 frac−66%·max−14%·p95 무승부 | |
+| **refinement** `refine_p95` | RefinementAgent+surrogate훅, **155k(2배 빠름)·자립99.96%**, 주행 **p95−10.6%·max−16%** | ⭐ **종합 승**(견고지표·속도·안정) |
+| **결론** | **refinement > from-scratch.** 보상라벨 **p95**(frac 직접최적화=**reward hacking**으로 실패, +135%) | |
+| **부산물** | reward hacking 실증 · `CargoBedLoader` 기즈모 좌표버그 수정 · RefinementAgent에 SaveLayout+Visualizer+surrogate훅 추가 | |
+
+> **다음 후보**: ①더 어려운 manifest(무거운·파이프·비대칭 — CogX 단순답 안 통하는 곳에서 RL 진가) ②멀티시드 refinement(국소최적 회피) ③좌표 원점 정리(bedAnchor=트레이중심 확인·CogY floorTop 1cm) ④룰 커리큘럼(`supportRatioMin` 인스펙터 0.5→0.7).
+> ⚠️ **모델 호환**: `.onnx`는 학습 에이전트 규격(obs/action)에 묶임 — refine모델을 PlacementAgent로 못 돌림. 팀원 공유 시 `RefinementAgent.cs`+`LayoutRiskModel.cs`+`.onnx` 세트 필요.
 
 ---
 

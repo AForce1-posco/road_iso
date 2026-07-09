@@ -206,4 +206,18 @@
 
 ---
 
+## 2026-07-09 — B 사이클: surrogate(p95) 보상 RL + from-scratch vs refinement
+
+- **팀원 예측기 정체 파악**: 준 `surrogate_risk_model_layout_v416.pkl` = **RandomForest**(sklearn, 13피처, cv에 RF/XGB/LGB/CatBoost 비교 = 트리 ML, **딥러닝 아님**). 입력=배치피처(CogX/Y/Z·MaxHeightM·InertiaXX/YY/ZZ+CargoCount·TotalMassKg+도로4). **좌표=Unity규약(x=폭·y=높이·z=길이)** 을 학습데이터 값범위로 확정(사용자가 y=길이로 오해했으나 데이터가 반증), 질량 **×100(676kg)** 스케일 학습. 팀원 `RiskModel.cs`는 별개(동적7피처→순간LTR, 입력이 배치가 아니라 RL 보상 불가).
+- **A(배선 검증)**: RF.pkl→트리JSON export(RF평균=leaf/n, sklearn 파리티 1e-18) → `LayoutRiskModel.cs`(신규, 스왑가능 예측기) + `PlacementAgent.useSurrogateReward`(터미널 −risk). **그러나 주어진 모델은 질량 지배(중요도 0.79)** 라 고정 manifest(질량상수)에서 보상 평평(≈CGS) 실증 → 신호 있는 라벨로 재학습 필요(B).
+- **B(재학습)**: `gen_layouts.py`로 같은 manifest 유효·다양 배치 **86개(case9001~9086)** 생성 → 배치주행(60km/h, 전부 secured). **⚠️ results.csv 요약 max_abs_ltr=0.000 버그** 발견 → **시계열 `LTR_Total`(58열) 직접계산**이 진실(maxLTR 0.75~1.0). 라벨 비교: `frac(>0.7)` 21배 스프레드지만 R²**0.58**(rare-event 노이즈) vs `p95` R²**0.96**. → **보상=p95(신뢰), 검증=frac(팀원 실지표)** 역할분담. RandomForest 재학습 → `layout_risk_p95/frac07/both.json`(정규화, scale1 통일).
+- **3-way 주행검증**: 빈패커 대비 **p95 frac−66%·max−14%(최고)**, both −33%, **frac07 +135%(꼴찌)**. → **reward hacking 실증**: frac07은 R²0.58 노이즈 예측기를 최적화해 "가짜 고득점"(TensorBoard 보상 최고)냈으나 실제 주행은 가장 위험. **∴ 진짜 지표라도 예측 노이즈면 보상 금지, 신뢰 높은 대리지표(p95)로 최적화 후 실지표로 검증이 정석.**
+- **refinement**: `RefinementAgent`에 surrogate훅(보상=ΔScore, Score=−risk → 누적=빈패커 대비 위험감소, +면 이김) + `SaveLayout` + `RefinementVisualizer` 추가. `refine_p95`: **155k 수렴(from-scratch 300k의 절반)·ValidMoveRate 99.96%(교사 없이 자립)·보상 +0.23**. 주행 **p95 0.398(−10.6%, from-scratch는 0.444 무승부)·max 0.717(−16%)**. **결론: refinement > from-scratch** — 견고지표(p95·max)·속도·안정 모두 우위(from-scratch는 frac 1프레임만 앞섬=노이즈). 이유: refine=조밀보상ΔScore+유효시작→p95 세밀최적화 / from-scratch=희소터미널+교사지배→좌우중앙(꼬리깎기)에 그침.
+- **버그수정**: `CargoBedLoader` OnDrawGizmos·fallback 적재함 치수가 stale **0.64×0.24(폭>길이=에디터서 가로로 보임)** → 실제 **0.21×0.61**로 4곳 통일. 축(x=폭·z=길이) 연결은 원래 정상, Play는 파일값 써서 이미 정상, **미리보기 치수만 옛값**이었음.
+- **기타 확인**: 트럭 에셋 `Truck_LowPoly`=SR Studios Kerala(인도) 범용 게임 로우폴리(Maya, **실차 아님**)→전복 현실성은 메시가 아닌 VehicleController 물리값(질량3500·wheelBase3.2·CoM·윤거) 소관. 주행속도=PurePursuitController `isoTargetSpeedKmh`(직진60)/`isoCurveSpeedKmh`, 앞곡률 보간+P제어.
+- **미해결**: 좌표 원점 통일(bedAnchor=트레이바닥중심 확인·CogY floorTop 1cm). 룰은 현재 H1~H13 전부 상시 ON(토글 없음), 튜닝 가능한 건 `supportRatioMin`·`maxPayloadKg`·`heightLimitM`(인스펙터). 룰 변경 시 86배치+surrogate 재생성 필요(학습룰=데이터룰 정합).
+- **다음**: 더 어려운 manifest / 멀티시드 refinement(국소최적) / 룰 커리큘럼 / 좌표 원점 정리.
+
+---
+
 _(새 항목은 이 아래에 추가)_
