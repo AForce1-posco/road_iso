@@ -68,6 +68,22 @@ public class PlacementAgent : Agent
     [Tooltip("교사도 못 놓아 완주 실패 시 남은 화물 1개당 감점 (완주 유도, 단 −1.5 절벽 아님)")]
     public float unplacedPenalty = 0.1f;
 
+    [Header("Surrogate 보상 (A안: 예측기 리스크 = 보상, 2026-07-08)")]
+    [Tooltip("켜면 최종 보상 = -리스크점수(surrogate 예측기). RewardCalculator(CGS 등) 대신 배치→동적위험 예측을 보상으로. 스텝 shaping도 끔(terminal-only). 배선 검증/사이클2용.")]
+    public bool useSurrogateReward = false;
+    [Tooltip("Resources 아래 트리 JSON 이름(확장자 제외). export_rf_to_json.py 산출. 모델 교체 = 이 파일만 교체.")]
+    public string surrogateResourceName = "layout_risk_treedata";
+    [Tooltip("모델이 학습된 질량 스케일. 동적 sim massScale=100(676kg)로 학습됨(results.csv boxpack001_best=676 확인) → 100. ⚠️ 팀원 라벨 정의와 함께 최종 확인 권장.")]
+    public float modelMassScaleKg = 100f;
+    [Tooltip("리스크점수(작음, 질량고정 시 ~0.0003 스프레드)를 보상으로 키우는 배율. 보상 = -risk*scale. 스텝/무효 페널티(≈0.02)보다 스프레드가 커야 학습됨.")]
+    public float surrogateRewardScale = 1000f;
+    [Tooltip("모델의 도로/주행 상수 피처(중요도 0이라 출력 무영향, 학습값에 맞춤). TargetSpeedKmh / RoadBankAngleDeg / RoadSlopeDeg / VehicleBaseMassKg")]
+    public float targetSpeedKmh = 45f;
+    public float roadBankAngleDeg = 0f;
+    public float roadSlopeDeg = 0f;
+    public float vehicleBaseMassKg = 1500f;
+    private LayoutRiskModel riskModel;
+
     [Header("배치 저장 (추론/검증용 — ⚠️ 학습 시엔 반드시 OFF)")]
     [Tooltip("켜면 에피소드 완주(전부 배치) 시 배치를 Assets/Data/Results/<layoutOutName>.json 으로 저장(동적 주행 입력용). 매 에피소드 덮어씀. 학습 중엔 수만 번 쓰므로 반드시 끌 것.")]
     public bool saveLayoutOnComplete = false;
@@ -115,6 +131,7 @@ public class PlacementAgent : Agent
 
         rules = new RuleChecker(ruleConfig);
         reward = new RewardCalculator(rewardConfig, ruleConfig);
+        if (useSurrogateReward) riskModel = new LayoutRiskModel(surrogateResourceName);
 
         var cat = new Dictionary<string, CargoType>();
         foreach (var t in CargoCatalog.CreateDefault()) if (t != null) cat[t.id] = t;
@@ -327,7 +344,7 @@ public class PlacementAgent : Agent
                 if (!PlaceByTeacher())
                 {
                     // 에이전트가 자리를 막아 교사도 못 놓음 → 완주 실패(단 −1.5 절벽 아님).
-                    float partial = reward.Final(placed).total - unplacedPenalty * CountRemaining();
+                    float partial = TerminalReward() - unplacedPenalty * CountRemaining();
                     AddReward(partial);
                     if (verboseLog) Debug.Log($"[에피소드 {episodeIdx} 완주실패] {placed.Count}/{placedTarget} (교사도 막힘) R={partial:F3}");
                     EndEpisode();
@@ -340,10 +357,10 @@ public class PlacementAgent : Agent
         // 목록 다 놓음 → 최종 보상 + 종료
         if (AllPlaced())
         {
-            var rf = reward.Final(placed);
-            AddReward(rf.total);
+            float tr = TerminalReward();
+            AddReward(tr);
             if (saveLayoutOnComplete) SaveLayout();   // 추론/검증용: 완성배치를 주행 입력 JSON으로
-            if (verboseLog) Debug.Log($"[에피소드 {episodeIdx} 완료] 전부 배치! 최종보상 {rf}");
+            if (verboseLog) Debug.Log($"[에피소드 {episodeIdx} 완료] 전부 배치! 최종보상 {tr:F4}{(useSurrogateReward ? " (surrogate=-risk)" : "")}");
             EndEpisode();
         }
     }
@@ -370,7 +387,7 @@ public class PlacementAgent : Agent
         placed.Add(cand);
         remaining[typeIdx]--;
         invalidCount = 0;
-        AddReward(reward.Step(placed)); // 스텝 shaping
+        if (!useSurrogateReward) AddReward(reward.Step(placed)); // 스텝 shaping (surrogate 모드는 terminal-only = 정석)
         if (verboseLog) Debug.Log($"  ✔ {type.id} 배치 @ 셀({c},{r}) rot{rot} → 높이 {cand.Top:F3}m | {placed.Count}/{placedTarget}");
         return true;
     }
@@ -512,5 +529,54 @@ public class PlacementAgent : Agent
         float m = 0f; Vector3 w = Vector3.zero;
         foreach (var p in placed) { m += p.Mass; w += p.Mass * p.center; }
         return m > 1e-6f ? w / m : Vector3.zero;
+    }
+
+    /// <summary>최종(터미널) 보상. surrogate 모드면 -리스크*배율, 아니면 기존 RewardCalculator.Final.</summary>
+    private float TerminalReward()
+    {
+        if (useSurrogateReward && riskModel != null && riskModel.Loaded)
+            return -riskModel.Predict(BuildRiskFeatures()) * surrogateRewardScale;
+        return reward.Final(placed).total;
+    }
+
+    /// <summary>
+    /// surrogate 모델 입력 13피처를 이름→값 맵으로 구성 (모델 학습 규약 = Unity 규약: x=폭·y=높이·z=길이).
+    /// 관성은 트레이축 정렬 박스(yaw 0/90) 가정으로 D=2·halfSize로 직접 계산 + 평행축(적재물 CoG 기준).
+    /// ⚠️ 파이프(pitch 90)가 섞이면 축정렬 가정이 깨짐 — 현재 박스 전용 실험에선 정확.
+    /// ⚠️ TotalMassKg는 학습 스케일(×modelMassScaleKg). CogY는 floorTop 기준(학습 CSV의 bedAnchor와 ~1cm 차 가능하나 중요도≈0).
+    /// </summary>
+    private Dictionary<string, float> BuildRiskFeatures()
+    {
+        Vector3 cog = Cog();
+        float ixx = 0f, iyy = 0f, izz = 0f, maxTop = ruleConfig.floorTopY;
+        foreach (var p in placed)
+        {
+            float m = p.Mass;
+            float Dx = p.halfSize.x * 2f, Dy = p.halfSize.y * 2f, Dz = p.halfSize.z * 2f; // 트레이축 정렬 치수
+            float ibx = m / 12f * (Dy * Dy + Dz * Dz);
+            float iby = m / 12f * (Dx * Dx + Dz * Dz);
+            float ibz = m / 12f * (Dx * Dx + Dy * Dy);
+            Vector3 off = p.center - cog;                                                  // 평행축 이동
+            ixx += ibx + m * (off.y * off.y + off.z * off.z);
+            iyy += iby + m * (off.x * off.x + off.z * off.z);
+            izz += ibz + m * (off.x * off.x + off.y * off.y);
+            maxTop = Mathf.Max(maxTop, p.Top);
+        }
+        return new Dictionary<string, float>
+        {
+            { "TargetSpeedKmh",    targetSpeedKmh },
+            { "RoadBankAngleDeg",  roadBankAngleDeg },
+            { "RoadSlopeDeg",      roadSlopeDeg },
+            { "VehicleBaseMassKg", vehicleBaseMassKg },
+            { "CargoCount",        placed.Count },
+            { "TotalMassKg",       TotalMass() * modelMassScaleKg },
+            { "CogX",              cog.x },
+            { "CogY",              cog.y },
+            { "CogZ",              cog.z },
+            { "MaxHeightM",        maxTop },
+            { "InertiaXX",         ixx },
+            { "InertiaYY",         iyy },
+            { "InertiaZZ",         izz },
+        };
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using Unity.MLAgents;
 using Unity.MLAgents.Actuators;
 using Unity.MLAgents.Sensors;
@@ -41,6 +42,27 @@ public class RefinementAgent : Agent
     [Tooltip("무효 이동(겹침/이탈) 시 작은 페널티")]
     public float invalidMovePenalty = 0.02f;
 
+    [Header("Surrogate 보상 (2026-07-09) — PlacementAgent와 같은 잣대")]
+    [Tooltip("켜면 매 스텝 보상 = ΔScore(이동 후−전), Score = −리스크(surrogate). 끄면 기존 ΔFinal(CGS). refinement의 조밀보상 구조는 그대로, '무엇을 개선하나'만 교체.")]
+    public bool useSurrogateReward = false;
+    [Tooltip("Resources 아래 트리 JSON(확장자 제외). PlacementAgent와 동일 모델 쓰면 공정비교.")]
+    public string surrogateResourceName = "layout_risk_p95";
+    [Tooltip("모델 학습 질량 스케일(동적 sim massScale=100=676kg). 0중요도라 값 무관하나 학습과 맞춤.")]
+    public float modelMassScaleKg = 100f;
+    [Tooltip("정규화 리스크(0~1)를 보상으로 키우는 배율. ΔScore라 1로 충분.")]
+    public float surrogateRewardScale = 1f;
+    [Tooltip("모델의 도로/주행 상수 피처(중요도 0, 학습값에 맞춤): 속도/뱅크/경사/차체질량")]
+    public float targetSpeedKmh = 60f;
+    public float roadBankAngleDeg = 0f;
+    public float roadSlopeDeg = 0f;
+    public float vehicleBaseMassKg = 3500f;
+    private LayoutRiskModel riskModel;
+
+    [Header("배치 저장 (추론/검증용 — 학습 시 OFF)")]
+    [Tooltip("켜면 에피소드 끝(재배치 완료)마다 현재 배치를 Assets/Data/Results/<layoutOutName>.json 저장. 학습 중엔 반드시 OFF.")]
+    public bool saveLayoutOnComplete = false;
+    public string layoutOutName = "rl_refine_layout";
+
     [Header("디버그")]
     public bool verboseLog = false;
 
@@ -77,6 +99,7 @@ public class RefinementAgent : Agent
         rules = new RuleChecker(ruleConfig);
         reward = new RewardCalculator(rewardConfig, ruleConfig);
         packer = new BinPacker(ruleConfig, rewardConfig, cols, rows) { mode = startPackMode };
+        if (useSurrogateReward) riskModel = new LayoutRiskModel(surrogateResourceName);
 
         manifestList = CargoManifest.Resolve(startManifest, "", out _);
         numItems = Mathf.Max(1, manifestList.Count);
@@ -107,7 +130,7 @@ public class RefinementAgent : Agent
 
         stepCount = 0;
         validMoves = 0;
-        prevFinal = placed.Count > 0 ? reward.Final(placed).total : 0f;
+        prevFinal = placed.Count > 0 ? Score() : 0f;
         startFinal = prevFinal;
         if (verboseLog) Debug.Log($"[Refine 시작] {placed.Count}개, Final={prevFinal:F3}");
     }
@@ -163,8 +186,8 @@ public class RefinementAgent : Agent
 
         if (TryRelocate(itemIdx, cellIdx, rot))
         {
-            float now = reward.Final(placed).total;
-            AddReward(now - prevFinal);      // ΔFinal (개선분). 누적 = 시작 대비 개선
+            float now = Score();
+            AddReward(now - prevFinal);      // ΔScore (개선분). 누적 = 시작 대비 개선 (CGS Final 또는 −surrogate위험)
             prevFinal = now;
             validMoves++;
         }
@@ -181,6 +204,7 @@ public class RefinementAgent : Agent
             stats.Add("Refine/FinalImprovement", prevFinal - startFinal);
             stats.Add("Refine/FinalAbsolute", prevFinal);
             if (verboseLog) Debug.Log($"[Refine 종료] Final={prevFinal:F3} (시작 {startFinal:F3}, Δ{prevFinal - startFinal:+0.000;-0.000}), 유효 {validMoves}/{stepsPerEpisode}");
+            if (saveLayoutOnComplete) SaveLayout();
             EndEpisode();
         }
     }
@@ -253,5 +277,86 @@ public class RefinementAgent : Agent
     private float TotalMass()
     {
         float m = 0f; foreach (var p in placed) m += p.type.massKg; return m;
+    }
+
+    /// <summary>현재 refined 배치를 동적 주행 입력용 JSON(CargoLayoutFile)으로 저장. PlacementAgent.SaveLayout과 동일 포맷.</summary>
+    private void SaveLayout()
+    {
+        var file = new CargoLayoutFile
+        {
+            version = 1,
+            bed = new CargoLayoutBed { widthX = ruleConfig.trayLateralM, lengthZ = ruleConfig.trayLengthM, wallHeight = 0.06f },
+            cargo = new List<CargoLayoutEntry>()
+        };
+        foreach (var p in placed)
+        {
+            if (p.type == null) continue;
+            Vector3 s = p.type.sizeM;
+            float asIs    = Mathf.Abs(p.halfSize.x * 2f - s.x) + Mathf.Abs(p.halfSize.z * 2f - s.z);
+            float swapped = Mathf.Abs(p.halfSize.x * 2f - s.z) + Mathf.Abs(p.halfSize.z * 2f - s.x);
+            bool rot90 = swapped < asIs - 1e-5f;
+            file.cargo.Add(new CargoLayoutEntry
+            {
+                type = p.type.name,
+                localPos = p.center,
+                localEuler = rot90 ? new Vector3(0f, 90f, 0f) : Vector3.zero,
+                secured = true
+            });
+        }
+        string dir = Path.Combine(Application.dataPath, "Data/Results");
+        Directory.CreateDirectory(dir);
+        string path = Path.Combine(dir, layoutOutName + ".json");
+        File.WriteAllText(path, JsonUtility.ToJson(file, true));
+        Debug.Log($"[RefinementAgent] 배치 저장: {placed.Count}개 → {path}");
+#if UNITY_EDITOR
+        UnityEditor.AssetDatabase.Refresh();
+#endif
+    }
+
+    /// <summary>배치 점수(높을수록 좋음). surrogate 모드면 −리스크×배율, 아니면 기존 CGS Final. ΔScore가 스텝 보상.</summary>
+    private float Score()
+    {
+        if (useSurrogateReward && riskModel != null && riskModel.Loaded)
+            return -riskModel.Predict(BuildRiskFeatures()) * surrogateRewardScale;
+        return reward.Final(placed).total;
+    }
+
+    /// <summary>
+    /// surrogate 입력 13피처 (PlacementAgent.BuildRiskFeatures와 동일 = 두 에이전트 공정비교).
+    /// Unity 규약(x=폭·y=높이·z=길이), 관성은 축정렬 박스(yaw0/90) D=2·halfSize, 평행축(적재물 CoG).
+    /// </summary>
+    private Dictionary<string, float> BuildRiskFeatures()
+    {
+        Vector3 cog = Cog();
+        float ixx = 0f, iyy = 0f, izz = 0f, maxTop = ruleConfig.floorTopY;
+        foreach (var p in placed)
+        {
+            float m = p.type.massKg;
+            float Dx = p.halfSize.x * 2f, Dy = p.halfSize.y * 2f, Dz = p.halfSize.z * 2f;
+            float ibx = m / 12f * (Dy * Dy + Dz * Dz);
+            float iby = m / 12f * (Dx * Dx + Dz * Dz);
+            float ibz = m / 12f * (Dx * Dx + Dy * Dy);
+            Vector3 off = p.center - cog;
+            ixx += ibx + m * (off.y * off.y + off.z * off.z);
+            iyy += iby + m * (off.x * off.x + off.z * off.z);
+            izz += ibz + m * (off.x * off.x + off.y * off.y);
+            maxTop = Mathf.Max(maxTop, p.center.y + p.halfSize.y);
+        }
+        return new Dictionary<string, float>
+        {
+            { "TargetSpeedKmh", targetSpeedKmh },
+            { "RoadBankAngleDeg", roadBankAngleDeg },
+            { "RoadSlopeDeg", roadSlopeDeg },
+            { "VehicleBaseMassKg", vehicleBaseMassKg },
+            { "CargoCount", placed.Count },
+            { "TotalMassKg", TotalMass() * modelMassScaleKg },
+            { "CogX", cog.x },
+            { "CogY", cog.y },
+            { "CogZ", cog.z },
+            { "MaxHeightM", maxTop },
+            { "InertiaXX", ixx },
+            { "InertiaYY", iyy },
+            { "InertiaZZ", izz },
+        };
     }
 }

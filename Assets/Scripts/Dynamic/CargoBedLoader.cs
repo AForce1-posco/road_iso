@@ -80,7 +80,7 @@ public class CargoBedLoader : MonoBehaviour
     public IReadOnlyList<LoadedCargo> Loaded => loaded;
     public string LastLoadedPath { get; private set; }
     /// <summary>트레이 바닥 반폭(x)·반길이(z), 스케일 적용된 m. 이탈 판정용.</summary>
-    public Vector2 TrayHalfXZ { get; private set; } = new Vector2(3.2f, 1.2f);
+    public Vector2 TrayHalfXZ { get; private set; } = new Vector2(1.05f, 3.05f); // 0.21×0.61 bed의 반치수(×scale10) — Load 전 초기값
     private readonly List<LoadedCargo> loaded = new List<LoadedCargo>();
     private Transform trayRoot;
 
@@ -165,8 +165,8 @@ public class CargoBedLoader : MonoBehaviour
         LastLoadedPath = path;
         Clear();
         TrayHalfXZ = new Vector2(
-            (file.bed != null ? file.bed.widthX : 0.64f) * 0.5f * scale,
-            (file.bed != null ? file.bed.lengthZ : 0.24f) * 0.5f * scale);
+            (file.bed != null ? file.bed.widthX : 0.21f) * 0.5f * scale,
+            (file.bed != null ? file.bed.lengthZ : 0.61f) * 0.5f * scale);
         if (buildTray) BuildTray(file.bed);
 
         foreach (CargoLayoutEntry e in file.cargo)
@@ -297,8 +297,8 @@ public class CargoBedLoader : MonoBehaviour
 
     private void BuildTray(CargoLayoutBed bed)
     {
-        float w = (bed != null ? bed.widthX : 0.64f) * scale;
-        float l = (bed != null ? bed.lengthZ : 0.24f) * scale;
+        float w = (bed != null ? bed.widthX : 0.21f) * scale;
+        float l = (bed != null ? bed.lengthZ : 0.61f) * scale;
         float wallH = (bed != null ? bed.wallHeight : 0.06f) * scale;
         float floorT = 0.01f * scale;
         float wallT = 0.01f * scale;
@@ -333,7 +333,7 @@ public class CargoBedLoader : MonoBehaviour
     {
         if (bedAnchor != null)
         {
-            float w = 0.64f * scale, l = 0.24f * scale, h = 0.06f * scale;
+            float w = 0.21f * scale, l = 0.61f * scale, h = 0.06f * scale;   // 실제 적재함 폭0.21×길이0.61 (옛 0.64×0.24 = 가로로 보이던 버그)
             Gizmos.matrix = Matrix4x4.TRS(bedAnchor.position, bedAnchor.rotation, Vector3.one);
             Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.9f);
             Gizmos.DrawWireCube(new Vector3(0f, h * 0.5f, 0f), new Vector3(w, h, l)); // 트레이 부피

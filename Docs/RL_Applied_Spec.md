@@ -131,7 +131,7 @@ Step = stepScale · (0.7·CGS + 0.3·격자밀집),   stepScale = 0.05
 
 ### 4.5 가중치 전체 (RewardConfig, 인스펙터 튜닝)
 **코드 기본값**: `wLE 0.50 / wCGS 0.40 / wSS 0.10` · `stepScale 0.05`
-**⚠️ RLTraining 씬 현재값 (2026-07-07 CGS 단독 실험)**: `wLE 0 / wCGS 1 / wSS 0` — LE의 밀집 항이 "펼치기(균등배치)"를 벌해서 제거. stepScale도 0으로 낮춰 순수 터미널 CGS 실험 중(Step의 0.3·밀집 항까지 제거 목적).
+**⚠️ RLTraining 씬 현재값 (2026-07-08 확인)**: `wLE 0 / wCGS 1 / wSS 0` — LE의 밀집 항이 "펼치기(균등배치)"를 벌해서 제거. **`stepScale`는 씬에서 0.05 (0 아님)** → **"순수 CGS"가 아니라 CGS + 약한 스텝 밀집 shaping.** (stepScale=0 시도 run `b001_cgs_nostep`은 10,561 steps/0.623 = **학습 미완, 결론 불가**.)
 LE 내부 `leVolW 0.4 / leCompactW 0.4 / leContactW 0.2` (contactGap 0.03)
 CGS 내부 `cgsCenterW 0.5 / cgsLowW 0.5`
 SS 내부 `ssHeavyW 0.6 / ssFlatW 0.4` (flatnessRef 0.1)

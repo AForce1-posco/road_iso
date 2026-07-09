@@ -1,5 +1,7 @@
 # 3D 빈패커 설계 (BinPacker) — baseline + 워밍스타트
 
+> ⚠️ **일부 스테일 (2026-07-08)**: 본문 §2/§3/§8의 **1cm·1281셀·"RL과 완전 정합"** 표현은 **과거**입니다. 현재 코드 기본은 **2cm·11×31=341셀**(`BinPacker.cs:34`). **현재 진실은 `STATUS.md` 상단 표 참조.**
+
 > 목적: RL(PlacementAgent)의 **비교 baseline** + **워밍스타트(BC) 교사**.
 > 위험 데이터셋은 `generate_risk_cases.py`가 담당하므로, 빈패커는 **stable(규칙 지키며 잘 싣기)** 만 담당.
 > 핵심: **RL 환경(RuleChecker·RewardCalculator·격자 드롭)을 그대로 재사용**해, 신경망 대신 그리디 휴리스틱으로 배치.
