@@ -8,7 +8,24 @@
 
 ---
 
-## ⚡ 최신 (2026-07-09) — B 사이클 완결: surrogate 보상 RL로 baseline보다 안전한 배치 발견
+## ⚡ 최신 (2026-07-10 오후) — 보상 재설계: surrogate 위험 → CGS 해석적 · 위험도는 게이트
+
+| 항목 | 값 | 비고 |
+|---|---|---|
+| **보상 (현재)** | `ΔΦ`, `Φ = wCGS·CGS + wSS·SS` (**LE 제외**) | `RewardCalculator.Final`, RefinementAgent는 `useSurrogateReward=false` |
+| **CGS 4항** | `0.40·lat + 0.30·height + 0.15·long + 0.15·spread` | spread=**좌우 2차모멘트**(아령 방지, 3D콤팩트 아님) |
+| **SS 2항** | `0.6·layermono + 0.4·topflat` | 무거운거 아래·상단평탄 |
+| **위험도 (surrogate)** | **보상 아님 → 재학습 게이트로 이동** (계획) | `r > τ(≈0.6)` → 재학습 트리거. τ는 주행 1사이클 후 확정 |
+| **왜 분리** | surrogate="왼쪽=안전"(마뉴버 비대칭) vs CGS="중앙=안전" → **충돌·과적합** | CGS=범용 강건성 보상, 위험도=검증/게이트 |
+| **⚠️ 학습 전 필수** | Inspector에서 **wLE=0·wCGS=1·wSS=0·useSurrogateReward 해제** | 직렬화값이 C# 기본값 우선 |
+| **1단계 학습** | wCGS=1/wSS=0 → 수렴 → 주행 → baseline LTR 비교 | 나아지면 2단계 wSS=0.2, 아니면 위험도 게이트 도입 |
+
+> **핵심 긴장**: 사이클1서 "정적 CGS중앙 ≠ 동적 안전"(중앙배치 앞축 언로딩) 실증됨 → **CGS 개선=안전이라 단정 금지. 반드시 주행검증.** CGS-최적이 안 나아지면 그게 위험도 게이트 필요 신호.
+> 파일: `RewardCalculator.cs`(재작성) · 문서 `RL_Pipeline_Spec.pdf`(재생성) · 상세 WORKLOG 2026-07-10 오후.
+
+---
+
+## ⚡ 이전 (2026-07-09) — B 사이클 완결: surrogate 보상 RL로 baseline보다 안전한 배치 발견
 
 | 항목 | 값 | 비고 |
 |---|---|---|
@@ -33,7 +50,7 @@
 | **관측** | **359** (고정 manifest 시 350) | 높이맵341+CoG3+질량1+편차2+종류12 (1299는 **과거**) |
 | **행동** | (종류, **341**, 회전2) | 고정 manifest면 종류 브랜치 축소 |
 | **RLTraining 씬** | `useFixedManifest=1`(**B-004×8**)·`useGatedPool=0`·`binPackerHeuristic=0`·**`stepScale=0.05`** | 게이팅풀/데모 **미사용** |
-| **보상** | `R=0.50·LE+0.40·CGS+0.10·SS` + 스텝shaping(0.05) + 무효페널티 + Option C | ⚠️ RLTraining은 **wLE=0/wCGS=1/wSS=0** 오버라이드 → **"CGS 중심 + 약한 밀집shaping"**. **"순수 CGS"는 부정확**(stepScale 0.05) |
+| **보상** | ~~`R=0.50·LE+0.40·CGS+0.10·SS`~~ → **2026-07-10 재설계로 대체**(최신 섹션 참조) | Final = **wCGS·CGS+wSS·SS**(LE제외, CGS 4항·SS 2항). 위험도는 게이트로 |
 | **v1 결과** `b001_cgs` | **300,005 steps, reward 1.553** (수렴) | `b001_cgs_nostep`은 **10,561 steps/0.623 = 미완, 결론 불가** |
 | **v2** `boxpack003_refine_mask` | 빈패커(Dense) 배치서 시작 → 재배치, **ΔFinal** 보상 | action=(16,341,2), 순수 PPO |
 | **⭐ 핵심 발견** | **정적 CGS ≠ 동적 안전** (중앙·저CoG 배치가 코너링서 오히려 위험 = **앞축 언로딩** 실측) | 정적 proxy 한계 실증 → 예측기 필요성 근거 |

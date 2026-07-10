@@ -129,12 +129,14 @@ Step = stepScale · (0.7·CGS + 0.3·격자밀집),   stepScale = 0.05
 | 완주 실패 시 남은 화물 1개당 (Option C) | −0.1 (`unplacedPenalty`) |
 | 무효 행동 (Option C OFF, 구방식) | −0.05, 20회 반복 시 −0.5 + 종료 |
 
-### 4.5 가중치 전체 (RewardConfig, 인스펙터 튜닝)
-**코드 기본값**: `wLE 0.50 / wCGS 0.40 / wSS 0.10` · `stepScale 0.05`
-**⚠️ RLTraining 씬 현재값 (2026-07-08 확인)**: `wLE 0 / wCGS 1 / wSS 0` — LE의 밀집 항이 "펼치기(균등배치)"를 벌해서 제거. **`stepScale`는 씬에서 0.05 (0 아님)** → **"순수 CGS"가 아니라 CGS + 약한 스텝 밀집 shaping.** (stepScale=0 시도 run `b001_cgs_nostep`은 10,561 steps/0.623 = **학습 미완, 결론 불가**.)
-LE 내부 `leVolW 0.4 / leCompactW 0.4 / leContactW 0.2` (contactGap 0.03)
-CGS 내부 `cgsCenterW 0.5 / cgsLowW 0.5`
-SS 내부 `ssHeavyW 0.6 / ssFlatW 0.4` (flatnessRef 0.1)
+### 4.5 가중치 전체 (RewardConfig, 인스펙터 튜닝) — ⭐2026-07-10 재설계
+**코드 기본값 (재설계 후)**: `wLE 0 (Final 제외) / wCGS 1.0 / wSS 0.0` · `stepScale 0.05`
+**Final = wCGS·CGS + wSS·SS** (LE는 Final에서 제외 — BinPacker Stable·PlacementAgent Step만 LE 메서드 직접 호출). 1단계 1.0/0.0, 2단계 0.8/0.2 계획.
+**⚠️ Inspector 직접세팅 필수**(직렬화값이 C# 기본값 우선): `wLE 0 / wCGS 1 / wSS 0` + `useSurrogateReward` 해제.
+LE 내부 `leVolW 0.4 / leCompactW 0.4 / leContactW 0.2` (contactGap 0.03) — LE 메서드용, Final 미사용
+**CGS 4항 (세분화)** `cgsLatW 0.40 / cgsHeightW 0.30 / cgsLongW 0.15 / cgsSpreadW 0.15` (spreadRef 0.105) — spread=좌우 질량 2차모멘트(아령방지, 3D콤팩트 아님)
+**SS 2항** `ssLayerMonoW 0.6 / ssTopFlatW 0.4` (flatnessRef 0.1) — 무거운거 아래·상단평탄
+> 위험도(surrogate)는 **보상에서 제외 → 재학습 게이트로**(r>τ≈0.6). 상세 = RL_Pipeline_Spec.pdf 7절.
 
 ---
 

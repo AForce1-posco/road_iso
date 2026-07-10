@@ -51,15 +51,17 @@ public class RuleChecker
     // ── Hard 판정: 하나라도 걸리면 false + 사유 ─────────────────────────────
     public bool IsValid(IReadOnlyList<PlacedItem> placed, PlacedItem cand, out string reason)
     {
+        // ── 박스 전용 룰셋 (2026-07-10): H1·H2·H3·H8·H13만 적용 ──
         if (!H1_Payload(placed, cand)) { reason = "H1 과적(>7kg)"; return false; }
         if (!H2_Bounds(cand)) { reason = "H2 적재함 경계 이탈"; return false; }
         if (!H3_NoOverlap(placed, cand)) { reason = "H3 화물 겹침"; return false; }
-        if (!H4_PipeAlongZ(cand)) { reason = "H4 파이프 주행축(z) 아님"; return false; }
-        if (!H5_PipeOnFloor(cand)) { reason = "H5 파이프 비바닥"; return false; }
-        if (!H6_PipeNoStack(placed, cand)) { reason = "H6 파이프 상/하 적재"; return false; }
-        if (!H7_H10_BagStacking(placed, cand)) { reason = "H7/H10 포대 위 비포대"; return false; }
         if (!H8_SupportRatio(placed, cand)) { reason = "H8 지지율<70%"; return false; }
         if (!H13_Height(cand)) { reason = "H13 높이>27cm"; return false; }
+        // 파이프/포대 룰(H4·H5·H6·H7·H10) 비활성화 — 박스 manifest에선 미발동이라 제거. 파이프/포대 복귀 시 아래 재활성화:
+        // if (!H4_PipeAlongZ(cand)) { reason = "H4 파이프 주행축(z) 아님"; return false; }
+        // if (!H5_PipeOnFloor(cand)) { reason = "H5 파이프 비바닥"; return false; }
+        // if (!H6_PipeNoStack(placed, cand)) { reason = "H6 파이프 상/하 적재"; return false; }
+        // if (!H7_H10_BagStacking(placed, cand)) { reason = "H7/H10 포대 위 비포대"; return false; }
         reason = "";
         return true;
     }

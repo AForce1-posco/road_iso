@@ -233,4 +233,20 @@
 
 ---
 
+## 2026-07-10 (오후) — 보상 재설계: surrogate 위험 → CGS 해석적 (LE 제외, 4+2항) · 위험도는 게이트로
+
+- **결정 배경**: 위험도(surrogate)를 보상으로 쓸지 CGS 해석식을 쓸지 재검토. **둘은 충돌** — surrogate는 마뉴버 비대칭 때문에 "왼쪽=안전"(CogX↔p95 r+0.97), CGS는 "중앙=안전". 위험도를 보상에 넣으면 CGS와 반대로 당기고 특정 마뉴버에 과적합. **∴ 보상=CGS(범용 강건성), 위험도=검증/재학습 게이트로 역할 분리.**
+- **RewardCalculator 재작성** (`Static/RewardCalculator.cs`):
+  - **Final에서 LE 제외**: `total = wCGS·CGS + wSS·SS` (LE 메서드는 BinPacker Stable·PlacementAgent Step이 직접 호출하므로 존치, Final total에서만 뺌).
+  - **CGS 4항 세분화**: `cgsLatW·lat + cgsHeightW·height + cgsLongW·long + cgsSpreadW·spread` (기존 center/low 2항 → 4항). 기본 0.40/0.30/0.15/0.15.
+  - **spread = 좌우(x) 질량 2차모멘트**(`LateralDispersion`, CoG_x 기준 질량가중 std / spreadRef 0.105). ⚠️ **3D 콤팩트 아님** — 3D로 하면 부피고정에서 위로 쌓여 CoG↑(height와 충돌). lat(1차)과 독립인 좌우 분산만 봐서 "아령 배치"(CoG 중앙인데 좌우로 벌어짐) 감점.
+  - **SS 2항 개명**: `ssLayerMonoW·layermono(무거운거 아래) + ssTopFlatW·topflat(상단평탄)`. 로직은 기존 HeavyBelow/Flatness 재사용.
+  - RewardConfig 필드 교체: cgsCenterW/cgsLowW/ssHeavyW/ssFlatW **제거** → cgsLat/Height/Long/SpreadW·spreadRef·ssLayerMono/TopFlatW **신설**. wLE=0(Final 미사용).
+- **RefinementAgent 무변경**: 보상형은 이미 `AddReward(ΔScore)`=potential-based ΔΦ, `useSurrogateReward=false` 기본 → 자동으로 새 CGS Final 사용. ⚠️ **Inspector 직접 세팅 필요**(직렬화값이 C# 기본값 우선): wLE=0/wCGS=1/wSS=0, useSurrogateReward 해제.
+- **위험도 게이트 설계(계획, 미배선)**: RL 배치 → surrogate 예측위험 r → **r > τ(≈0.6)면 재학습 트리거**. τ 근거: |LTR|=1 전복문턱·통상 0.6 전복경고선·관측 p95 최대 0.63·baseline 0.50. **학습→주행 1사이클 후 τ 실측 보정.** 다중마뉴버 데이터는 미룸.
+- **학습 계획**: 1단계 wCGS=1/wSS=0(CoG 중앙·낮게·좌우응집만) → 수렴 확인 → 주행 → baseline LTR 비교. 나아지면 2단계 wSS=0.2. **안 나아지면 위험도 게이트 도입 시점**(사이클1 재현 = CGS만으론 부족 증거).
+- **문서**: `RL_Pipeline_Spec.pdf` 재생성(보상=CGS 현재/위험도=게이트 계획으로 0·4·6·7·8절 전면 반영), RewardCalculator 클래스 주석 최신화, STATUS 갱신.
+
+---
+
 _(새 항목은 이 아래에 추가)_

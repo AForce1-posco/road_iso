@@ -2,13 +2,13 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 정적 배치 보상 채점 모듈 (S2). "이 배치가 얼마나 좋은가"를 0~1 정규화 3목적함수 가중합으로 점수화.
-///   R = w_LE·LE + w_CGS·CGS + w_SS·SS   (초기 0.50/0.40/0.10, DOE로 조정)
-/// - LE (Loading Efficiency): 부피활용율·데드스페이스·격자밀집·접촉
-/// - CGS (CoG Stability) ⭐: CoG x·z 중앙 수렴 + y(높이) 낮게
-/// - SS (Stacking Stability): 무거운 것 아래·상단 평탄·포대 네스팅
+/// 정적 배치 보상 채점 모듈 (S2). "이 배치가 얼마나 좋은가"를 0~1 정규화 목적함수 가중합으로 점수화.
+///   Final = w_CGS·CGS + w_SS·SS   (2026-07-10 LE 제외 — 전복안전 목적. 1단계 1.0/0.0, 2단계 0.8/0.2)
+/// - CGS (CoG Stability) ⭐: lat(좌우중앙)·long(앞뒤중앙)·height(낮게)·spread(좌우분산 작게) 4항
+/// - SS  (Stacking Stability): layermono(무거운거 아래)·topflat(상단평탄) 2항
+/// - LE  (Loading Efficiency): Final엔 미포함. BinPacker(Stable 정렬)·PlacementAgent(Step shaping)만 메서드 직접 호출.
 /// 스텝 보상(shaping) + 최종 보상 둘 다 제공. Hard 위반은 RuleChecker가 마스킹하므로 여기선 가정하지 않음.
-/// RewardConfig로 가중치·정규화 기준 인스펙터 튜닝(DOE용). RuleChecker(지지율·CoG) 재사용.
+/// RefinementAgent 보상 = ΔFinal(potential-based). RewardConfig로 가중치·정규화 인스펙터 튜닝.
 ///
 /// 좌표계: RuleChecker와 동일 (Unity 로컬 m, x=좌우 y=높이 z=주행/길이, 원점=트레이 rear-left 코너, 중심=W/2·L/2).
 /// </summary>
@@ -43,10 +43,10 @@ public class RewardCalculator
     // ── 최종 보상: 배치 전체(목록 다 놓은 상태) 평가 ──────────────────────────
     public Reward Final(IReadOnlyList<RuleChecker.PlacedItem> placed)
     {
-        float le = LoadingEfficiency(placed);
+        float le = LoadingEfficiency(placed);   // 참고용(대시보드) — 2026-07-10 보상 total엔 미포함
         float cgs = CogStability(placed);
         float ss = StackingStability(placed);
-        float total = cfg.wLE * le + cfg.wCGS * cgs + cfg.wSS * ss;
+        float total = cfg.wCGS * cgs + cfg.wSS * ss;   // LE 제외: 전복안전 목적 → CGS·SS만
         return new Reward { total = total, le = le, cgs = cgs, ss = ss };
     }
 
@@ -114,22 +114,33 @@ public class RewardCalculator
     public float CogStability(IReadOnlyList<RuleChecker.PlacedItem> placed)
     {
         Vector3 cog = Cog(placed);
-        // 좌우(x)·전후(z) 중앙 수렴: |cog-중심|/half → 중심(W/2,L/2)이면 1점
-        float centerX = 1f - Clamp01(TrayHalfX > 1e-6f ? Mathf.Abs(cog.x - TrayHalfX) / TrayHalfX : 0f);
-        float centerZ = 1f - Clamp01(TrayHalfZ > 1e-6f ? Mathf.Abs(cog.z - TrayHalfZ) / TrayHalfZ : 0f);
-        // 높이(y) 낮게: 바닥(FloorTop)=1, 한도(FloorTop+HeightLimit)=0
-        float h = HeightLimit > 1e-6f ? (cog.y - FloorTop) / HeightLimit : 0f;
-        float lowY = 1f - Clamp01(h);
-        return Clamp01(cfg.cgsCenterW * (0.5f * centerX + 0.5f * centerZ) + cfg.cgsLowW * lowY);
+        // lat: 좌우(x) 중앙 수렴 — 전복(LTR) 직접 인자. 중심(W/2)이면 1
+        float lat = 1f - Clamp01(TrayHalfX > 1e-6f ? Mathf.Abs(cog.x - TrayHalfX) / TrayHalfX : 0f);
+        // long: 앞뒤(z) 중앙 수렴 — 축하중 균등
+        float lng = 1f - Clamp01(TrayHalfZ > 1e-6f ? Mathf.Abs(cog.z - TrayHalfZ) / TrayHalfZ : 0f);
+        // height: CoG 낮게 — 낮을수록 전복 임계↑ (바닥=1, 한도=0)
+        float height = 1f - Clamp01(HeightLimit > 1e-6f ? (cog.y - FloorTop) / HeightLimit : 0f);
+        // spread: 좌우(x) 질량 분산 작을수록 1 — 중심선 근처로 모임(아령 배치 방지).
+        //   lat(1차 모멘트=평균위치)과 독립인 2차 모멘트. 세로/3D 콤팩트 아님 → 탑 쌓기 부작용 없음.
+        float spread = 1f - Clamp01(cfg.spreadRef > 1e-6f ? LateralDispersion(placed, cog.x) / cfg.spreadRef : 0f);
+        return Clamp01(cfg.cgsLatW * lat + cfg.cgsLongW * lng + cfg.cgsHeightW * height + cfg.cgsSpreadW * spread);
+    }
+
+    // 좌우(x) 질량가중 표준편차 (CoG_x 기준). 클수록 좌우로 벌어짐(아령).
+    float LateralDispersion(IReadOnlyList<RuleChecker.PlacedItem> placed, float cogX)
+    {
+        float m = 0f, var = 0f;
+        foreach (var p in placed) { float d = p.center.x - cogX; m += p.Mass; var += p.Mass * d * d; }
+        return m > 1e-6f ? Mathf.Sqrt(var / m) : 0f;
     }
 
     // ── 목적함수 3: Stacking Stability (0~1) ─────────────────────────────────
     public float StackingStability(IReadOnlyList<RuleChecker.PlacedItem> placed)
     {
         if (placed.Count == 0) return 1f;
-        float heavyBelow = HeavyBelowScore(placed);
-        float flat = SurfaceFlatness(placed);
-        return Clamp01(cfg.ssHeavyW * heavyBelow + cfg.ssFlatW * flat);
+        float layermono = HeavyBelowScore(placed);   // 무거운 것 아래(층별 질량 단조감소)
+        float topflat = SurfaceFlatness(placed);      // 상단 평탄
+        return Clamp01(cfg.ssTopFlatW * topflat + cfg.ssLayerMonoW * layermono);
     }
 
     // 무거운 것 아래: 높이(center.y)와 질량의 음의 상관 → 무거울수록 낮으면 1
@@ -170,10 +181,10 @@ public class RewardCalculator
 [System.Serializable]
 public class RewardConfig
 {
-    [Header("목적함수 가중치 (DOE로 조정, 초기 0.50/0.40/0.10)")]
-    public float wLE = 0.50f;
-    public float wCGS = 0.40f;
-    public float wSS = 0.10f;
+    [Header("목적함수 가중치 — 2026-07-10 LE 제외(Final 미사용). 1단계=1.0/0.0, 2단계=0.8/0.2")]
+    public float wLE = 0f;      // Final 미사용 (BinPacker/PlacementAgent Step만 LE 메서드 직접 호출)
+    public float wCGS = 1.0f;   // 1단계: CGS만
+    public float wSS = 0.0f;    // 2단계에서 0.2로
 
     [Header("스텝 shaping")]
     [Tooltip("스텝 보상 크기(최종 보상 대비 작게). 0이면 스텝 보상 끔")]
@@ -186,13 +197,17 @@ public class RewardConfig
     [Tooltip("벽 접촉 판정 거리(m). 이 안이면 접촉으로 봄")]
     public float contactGap = 0.03f;
 
-    [Header("CGS 내부 가중 (합 1 권장)")]
-    public float cgsCenterW = 0.5f;  // x·z 중앙
-    public float cgsLowW = 0.5f;     // y 낮게
+    [Header("CGS 내부 가중 (합 1 권장) — 2026-07-10 4항 세분화")]
+    public float cgsLatW = 0.40f;    // 좌우 중앙 (LTR 직접)
+    public float cgsHeightW = 0.30f; // 낮게
+    public float cgsLongW = 0.15f;   // 앞뒤 중앙
+    public float cgsSpreadW = 0.15f; // 좌우 분산 작게(중심선 근처)
+    [Tooltip("좌우 분산 기준(m). std가 이 값이면 spread점수 0. 기본=반폭 0.105")]
+    public float spreadRef = 0.105f;
 
     [Header("SS 내부 가중 (합 1 권장)")]
-    public float ssHeavyW = 0.6f;    // 무거운 것 아래
-    public float ssFlatW = 0.4f;     // 상단 평탄
+    public float ssLayerMonoW = 0.6f; // 무거운 것 아래(층 단조감소)
+    public float ssTopFlatW = 0.4f;   // 상단 평탄
     [Tooltip("평탄도 기준 편차(m). top std가 이 값이면 평탄점수 0")]
     public float flatnessRef = 0.1f;
 }
