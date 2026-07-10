@@ -20,6 +20,10 @@ public class RiskModelData
 
 public class RiskModel : MonoBehaviour
 {
+    [Tooltip("Resources 폴더 안의 트리데이터 JSON 이름(확장자 제외). 실시간 HUD용 기본 모델 외에 " +
+             "다른 트리 앙상블(예: surrogate_risk_model_v499_treedata)도 이 필드만 바꿔서 재사용 가능.")]
+    public string resourceName = "risk_model_treedata";
+
     private RiskModelData data;
     private bool loaded = false;
 
@@ -30,15 +34,15 @@ public class RiskModel : MonoBehaviour
 
     void LoadModel()
     {
-        TextAsset jsonFile = Resources.Load<TextAsset>("risk_model_treedata");
+        TextAsset jsonFile = Resources.Load<TextAsset>(resourceName);
         if (jsonFile == null)
         {
-            Debug.LogError("risk_model_treedata.json을 Resources 폴더에서 못 찾았습니다.");
+            Debug.LogError($"{resourceName}.json을 Resources 폴더에서 못 찾았습니다.");
             return;
         }
         data = JsonUtility.FromJson<RiskModelData>(jsonFile.text);
         loaded = true;
-        Debug.Log($"위험도 모델 로드 완료 — 트리 {data.treeRoots.Length}개, 노드 {data.featureIndex.Length}개");
+        Debug.Log($"위험도 모델 로드 완료({resourceName}) — 트리 {data.treeRoots.Length}개, 노드 {data.featureIndex.Length}개");
     }
 
     /// <summary>

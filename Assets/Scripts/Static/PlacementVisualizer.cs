@@ -14,8 +14,9 @@ using UnityEngine;
 ///
 /// [보는 법] Play 중 → autoCamera 켜면 Game 뷰에 바로 보임.
 ///           끄면 Scene 탭에서 "PlacementViz_Root" 선택 → F 키로 프레임.
+///
+/// PlacementAgent·RefinementAgent 어느 쪽에 붙여도 동작(둘 다 IPlacedCargoView 구현).
 /// </summary>
-[RequireComponent(typeof(PlacementAgent))]
 public class PlacementVisualizer : MonoBehaviour
 {
     [Header("표시")]
@@ -31,14 +32,22 @@ public class PlacementVisualizer : MonoBehaviour
     [Tooltip("무게중심(CoG) 마커 표시")]
     public bool showCoG = true;
 
-    private PlacementAgent agent;
+    private IPlacedCargoView agent;
     private Transform root;
     private readonly List<GameObject> spawned = new List<GameObject>();
     private int lastSig = int.MinValue;
     private GameObject cogBall, cogStem;
     private Camera vizCam;
 
-    void Awake() => agent = GetComponent<PlacementAgent>();
+    void Awake() => agent = FindAgent();
+
+    private IPlacedCargoView FindAgent()
+    {
+        var found = GetComponent<IPlacedCargoView>();
+        if (found == null)
+            Debug.LogWarning("[PlacementVisualizer] PlacementAgent/RefinementAgent를 못 찾았습니다 — 같은 오브젝트에 붙여있는지 확인하세요.");
+        return found;
+    }
 
     void Start()
     {
@@ -59,7 +68,7 @@ public class PlacementVisualizer : MonoBehaviour
     //   FL(-x,+z) FR(+x,+z)=앞  |  RL(-x,-z) RR(+x,-z)=뒤. 파이프 오버행은 뒤(-z)만 가능.
     void BuildCornerLabels()
     {
-        var cfg = agent.ruleConfig;
+        var cfg = agent.RuleConfig;
         float hx = cfg.trayLateralM * 0.5f, hz = cfg.trayLengthM * 0.5f, y = cfg.floorTopY + 0.008f;
         Color front = new Color(1f, 0.55f, 0.25f);  // 앞(캐빈) = 주황
         Color rear  = new Color(0.35f, 0.8f, 1f);   // 뒤 = 하늘색
@@ -146,7 +155,7 @@ public class PlacementVisualizer : MonoBehaviour
     // ── 적재함 (바닥 + 외곽 + 그리드) ───────────────────────────
     void BuildTray()
     {
-        var cfg = agent.ruleConfig;
+        var cfg = agent.RuleConfig;
         float lx = cfg.trayLateralM, lz = cfg.trayLengthM, hy = cfg.heightLimitM, fy = cfg.floorTopY;
         float hx = lx * 0.5f, hz = lz * 0.5f;
 
@@ -176,14 +185,14 @@ public class PlacementVisualizer : MonoBehaviour
         {
             var g = new List<Vector3>();
             float gy = fy + 0.001f;
-            for (int c = 0; c <= agent.cols; c++)
+            for (int c = 0; c <= agent.Cols; c++)
             {
-                float x = -hx + c * lx / agent.cols;
+                float x = -hx + c * lx / agent.Cols;
                 g.Add(new Vector3(x, gy, -hz)); g.Add(new Vector3(x, gy, hz));
             }
-            for (int r = 0; r <= agent.rows; r++)
+            for (int r = 0; r <= agent.Rows; r++)
             {
-                float z = -hz + r * lz / agent.rows;
+                float z = -hz + r * lz / agent.Rows;
                 g.Add(new Vector3(-hx, gy, z)); g.Add(new Vector3(hx, gy, z));
             }
             MakeLines("TrayGrid", g, new Color(1f, 1f, 1f, 0.35f));
@@ -195,7 +204,7 @@ public class PlacementVisualizer : MonoBehaviour
     // ── 최대적재높이 (27cm) 표시: (A) 상단 빨간 굵은 테두리 + (B) 반투명 빨간 천장면 ──
     void BuildHeightLimit()
     {
-        var cfg = agent.ruleConfig;
+        var cfg = agent.RuleConfig;
         float lx = cfg.trayLateralM, lz = cfg.trayLengthM;
         float hx = lx * 0.5f, hz = lz * 0.5f;
         float topY = cfg.floorTopY + cfg.heightLimitM;   // 한도 평면 y (=0.28)
@@ -287,7 +296,7 @@ public class PlacementVisualizer : MonoBehaviour
         Vector3 cog = w / m;
         cogBall.transform.localPosition = cog;
 
-        float fy = agent.ruleConfig.floorTopY;
+        float fy = agent.RuleConfig.floorTopY;
         float h = Mathf.Max(0.001f, cog.y - fy);
         cogStem.transform.localPosition = new Vector3(cog.x, fy + h * 0.5f, cog.z);
         cogStem.transform.localScale = new Vector3(0.004f, h, 0.004f);
@@ -352,19 +361,19 @@ public class PlacementVisualizer : MonoBehaviour
         cam.depth = 10;
         cam.nearClipPlane = 0.01f;
 
-        float lenZ = agent.ruleConfig.trayLengthM;
+        float lenZ = agent.RuleConfig.trayLengthM;
         Vector3 eye = new Vector3(lenZ * 0.9f, lenZ * 0.9f, -lenZ);
         camGo.transform.localPosition = eye;
-        Vector3 look = new Vector3(0f, agent.ruleConfig.floorTopY + 0.05f, 0f);
+        Vector3 look = new Vector3(0f, agent.RuleConfig.floorTopY + 0.05f, 0f);
         camGo.transform.localRotation = Quaternion.LookRotation((look - eye).normalized, Vector3.up);
     }
 
     // ── 트레이 경계 (Scene 뷰 보조 Gizmo) ───────────────────────
     void OnDrawGizmos()
     {
-        if (agent == null) agent = GetComponent<PlacementAgent>();
+        if (agent == null) agent = FindAgent();
         if (agent == null) return;
-        var cfg = agent.ruleConfig;
+        var cfg = agent.RuleConfig;
         Transform m = root != null ? root : transform;
         Gizmos.matrix = m.localToWorldMatrix;
         Gizmos.color = new Color(0.4f, 0.85f, 1f, 0.6f);

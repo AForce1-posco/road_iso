@@ -60,15 +60,19 @@ public class VehicleController : MonoBehaviour
         CurrentSpeedKmh = rb.velocity.magnitude * 3.6f;
     }
 
-    void ApplySteering()
+    /// <summary>현재 속도에서 실제로 낼 수 있는 최대 조향각(도). 고속일수록 maxSteerAngle에서
+    /// minSteerAngleAtHighSpeed 쪽으로 줄어듦. PurePursuitController가 steerInput을 정규화할 때도
+    /// 반드시 이 값을 기준으로 써야 함(고정된 maxSteerAngle로 나누면 고속에서 조향이 필요한 만큼
+    /// 안 들어가는데도 steerInput이 1.0으로 "풀 조향"이라고 착각하는 불일치가 생김).</summary>
+    public float GetSteerLimitDeg()
     {
         float speedRatio = Mathf.Clamp01(CurrentSpeedKmh / maxSpeedKmh);
+        return Mathf.Lerp(maxSteerAngle, minSteerAngleAtHighSpeed, speedRatio);
+    }
 
-        float steerLimit = Mathf.Lerp(
-            maxSteerAngle,
-            minSteerAngleAtHighSpeed,
-            speedRatio
-        );
+    void ApplySteering()
+    {
+        float steerLimit = GetSteerLimitDeg();
 
         float desiredSteer = Mathf.Clamp(targetSteer, -1f, 1f) * steerLimit;
 

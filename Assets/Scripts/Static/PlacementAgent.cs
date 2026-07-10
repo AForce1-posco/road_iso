@@ -16,7 +16,7 @@ using UnityEngine;
 /// 격자: cols(x) × rows(z) 셀. 셀 중심에 화물을 "떨어뜨려" 바닥/위 화물에 안착.
 /// </summary>
 [RequireComponent(typeof(BehaviorParameters))]
-public class PlacementAgent : Agent
+public class PlacementAgent : Agent, IPlacedCargoView
 {
     [Header("규제/보상 설정")]
     public RuleConfig ruleConfig = new RuleConfig();
@@ -88,6 +88,11 @@ public class PlacementAgent : Agent
 
     /// <summary>시각화용 읽기 전용 배치 목록 (PlacementVisualizer 가 사용). 학습엔 영향 없음.</summary>
     public IReadOnlyList<RuleChecker.PlacedItem> PlacedItems => placed;
+
+    // ── IPlacedCargoView (PlacementVisualizer 공용 인터페이스) ──
+    public RuleConfig RuleConfig => ruleConfig;
+    public int Cols => cols;
+    public int Rows => rows;
 
     private int invalidCount;
     private int placedTarget;                       // 이번 에피소드 총 배치 목표 수

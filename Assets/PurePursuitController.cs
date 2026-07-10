@@ -193,7 +193,10 @@ public class PurePursuitController : MonoBehaviour
         float steerAngleRad = Mathf.Atan(curvature * wheelBase);
         float steerAngleDeg = steerAngleRad * Mathf.Rad2Deg;
 
-        float steerInput = steerAngleDeg / vehicle.maxSteerAngle;
+        // 정규화 기준은 반드시 "지금 속도에서 실제로 낼 수 있는 조향각"이어야 함.
+        // 예전엔 고정된 vehicle.maxSteerAngle(저속 기준)로 나눠서, 고속에서 조향각이
+        // 줄어든 만큼 steerInput이 실제보다 작게 나와 급커브에서 조향이 덜 들어갔음.
+        float steerInput = steerAngleDeg / vehicle.GetSteerLimitDeg();
 
         return Mathf.Clamp(steerInput * steeringSensitivity, -1f, 1f);
     }

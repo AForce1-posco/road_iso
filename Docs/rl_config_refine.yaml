@@ -20,7 +20,8 @@ behaviors:
       buffer_size: 2048
       learning_rate: 3.0e-4
       learning_rate_schedule: linear
-      beta: 1.0e-2                  # 엔트로피 — 재배치 탐색
+      beta: 2.0e-2                  # 엔트로피 — 재배치 탐색 (기존 1e-2에서 상향, 후반부 탐험 유지)
+      beta_schedule: constant       # 기본(linear)은 학습 후반 탐험이 0에 가깝게 죽어서 "과감한 재배치"를 못 찾음
       epsilon: 0.2
       lambd: 0.95
       num_epoch: 3
@@ -36,7 +37,7 @@ behaviors:
         gamma: 0.99
         strength: 1.0
 
-    max_steps: 300000
+    max_steps: 200000
     time_horizon: 64
     summary_freq: 5000
     keep_checkpoints: 5
