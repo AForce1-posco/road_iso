@@ -7,9 +7,9 @@
   "cargoCount": 1,
   "maxHeight": 0.06,
   "cog": {
-    "x": 0.05,
+    "x": 0.155,
     "y": 0.04,
-    "z": 0.0
+    "z": 0.305
   },
   "bed": {
     "widthX": 0.21,
@@ -20,9 +20,9 @@
     {
       "type": "흰 파이프 번들(3)",
       "localPos": {
-        "x": 0.05,
+        "x": 0.155,
         "y": 0.04,
-        "z": 0.0
+        "z": 0.305
       },
       "localEuler": {
         "x": 90.0,
@@ -31,5 +31,6 @@
       },
       "secured": true
     }
-  ]
+  ],
+  "coordFrame": "rear_left"
 }

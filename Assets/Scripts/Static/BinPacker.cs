@@ -7,7 +7,7 @@ using UnityEngine;
 /// 매 스텝 "RuleChecker로 유효한 후보(96셀×회전) 중 RewardCalculator 점수 최대"를 선택(그리디).
 ///
 /// 용도: (1) RL 비교 baseline (RL vs 빈패커 vs 랜덤)  (2) 워밍스타트(BC) 교사(Phase 2, Decide 사용).
-/// 좌표계: RuleChecker와 동일 (x=좌우, y=높이, z=주행/길이, 원점=트레이 중심).
+/// 좌표계: RuleChecker와 동일 (x=좌우, y=높이, z=주행/길이, 원점=트레이 rear-left 코너, 중심=W/2·L/2).
 /// 설계: Docs/BinPacker_Design.md
 /// </summary>
 public class BinPacker
@@ -40,8 +40,8 @@ public class BinPacker
         this.rows = rows;
     }
 
-    private float HalfX => rcfg.trayLateralM * 0.5f;
-    private float HalfZ => rcfg.trayLengthM * 0.5f;
+    private float HalfX => rcfg.trayLateralM * 0.5f;   // 중심 x = W/2 (원점 아님)
+    private float HalfZ => rcfg.trayLengthM * 0.5f;    // 중심 z = L/2
     private int NumCells => cols * rows;
 
     /// <summary>미적재 화물 1개의 사유 요약 (모든 후보가 어떤 규칙에 걸렸는지 집계 → 최다 사유).</summary>
@@ -221,17 +221,17 @@ public class BinPacker
             return le + corner;
         }
         float r = reward.Final(tmp).total;
-        float tie = -0.001f * (candP.center.y + Mathf.Abs(candP.center.x) + Mathf.Abs(candP.center.z));
+        float tie = -0.001f * (candP.center.y + Mathf.Abs(candP.center.x - HalfX) + Mathf.Abs(candP.center.z - HalfZ));
         return r + tie;
     }
 
     private static float Volume(CargoType t) => t.sizeM.x * t.sizeM.y * t.sizeM.z;
 
     // ── 격자/드롭 (PlacementAgent와 동일 규약) ──────────────────────────────
-    private Vector2 CellCenter(int c, int r)   // → (x 좌우, z 주행)
+    private Vector2 CellCenter(int c, int r)   // → (x 좌우, z 주행), rear-left 코너 원점
     {
-        float x = -HalfX + (c + 0.5f) * rcfg.trayLateralM / cols;
-        float z = -HalfZ + (r + 0.5f) * rcfg.trayLengthM / rows;
+        float x = (c + 0.5f) * rcfg.trayLateralM / cols;
+        float z = (r + 0.5f) * rcfg.trayLengthM / rows;
         return new Vector2(x, z);
     }
 

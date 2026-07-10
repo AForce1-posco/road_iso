@@ -190,7 +190,7 @@ public class StaticDashboardUGUI : MonoBehaviour
     {
         if (placer == null) return;
         float empty = placer.EmptyMassKg;
-        Vector3 emptyCoG = new Vector3(placer.transform.position.x, (placer.transform.position.y + placer.BedTopY) * 0.5f, placer.transform.position.z);
+        Vector3 emptyCoG = new Vector3(placer.TrayCenterX, (placer.transform.position.y + placer.BedTopY) * 0.5f, placer.TrayCenterZ); // 빈 적재함 CoG = 트레이 중심
         float total = LoadCalculator.ComputeTotalMass(cargo, empty);
         Vector3 cog = LoadCalculator.ComputeCoG(cargo, empty, emptyCoG);
         FourPointLoad load = LoadCalculator.ComputeLoads(cog, total, placer.WorldSupports);

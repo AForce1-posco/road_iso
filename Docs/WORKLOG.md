@@ -218,6 +218,19 @@
 - **미해결**: 좌표 원점 통일(bedAnchor=트레이바닥중심 확인·CogY floorTop 1cm). 룰은 현재 H1~H13 전부 상시 ON(토글 없음), 튜닝 가능한 건 `supportRatioMin`·`maxPayloadKg`·`heightLimitM`(인스펙터). 룰 변경 시 86배치+surrogate 재생성 필요(학습룰=데이터룰 정합).
 - **다음**: 더 어려운 manifest / 멀티시드 refinement(국소최적) / 룰 커리큘럼 / 좌표 원점 정리.
 
+## 2026-07-10 — 좌표계 마이그레이션: 트레이 중심 원점 → rear-left 코너 원점 (전 시스템)
+
+- **이유**: 팀원 전원이 rear-left(rl) 코너를 원점으로 사용 + 외부도구/캘리브레이션 프레임 일치 + 모든 값 양수. 제약: **"내부 어디에도 중심 원점이 남으면 안 됨"** → I/O 변환이 아닌 **전면 내부 마이그레이션**.
+- **원점 정의**: x=0(좌)→W(우), z=0(뒤/테일게이트)→L(앞/캐빈), y=높이(불변). 중심(W/2,L/2)은 원점 아닌 **균형기준점**(CGS·LoadCalculator)으로만 유지.
+- **코드 18파일**:
+  - system①(RL/주행 11): RuleChecker(경계 [0,W]·CoG편차 |cog−W/2|), RewardCalculator(ContactScore 벽거리·CGS중앙), BinPacker(CellCenter·Stable tie), PlacementAgent·RefinementAgent(CellCenter·관측: 위치는 코너[0,1]·편차는 균형중심·경계마스크), CargoBedLoader(BuildTray/Gizmo 코너), CargoRiskRecorder(이탈판정 [0,2·half]), 시각화3(윤곽/그리드/라벨/카메라/기즈모). BinPackerRunner=BinPacker값 전파(무변경).
+  - system②(정적 씬 7): CargoPlacer(지오메트리/클램프/자석/카메라 — transform=코너, TrayCenterX/Z 헬퍼 신규, **저장 localPos가 자동 코너프레임**·씬이동 불필요), SupportConfig.Default(코너 4점), SafetyZone·CoGMarker·StaticDashboard(빈CoG=트레이중심), CalibrationRunner(**RL원점 입력 → 센터링 제거 = 항등, 팀 프레임과 정확히 일치**). StaticSceneSetup=Default통과(무변경).
+  - LoadCalculator: `u=(cog−centroid)/half` **차이기반 = 평행이동 불변** → 수식 무변경(호출부가 넘기는 프레임만 일치하면 됨), 검증 완료.
+- **데이터**: Cases/Cases_binpack/TestCases **701 JSON** → localPos·cog에 +(W/2,0,L/2), `coordFrame:"rear_left"` 가드. 정상트레이 13,749화물 x∈[0.015,0.195]·z∈[0.005,0.591] **전부 양수 검증**. (스크립트: scratchpad/migrate_layouts_to_corner.py)
+- **surrogate 재학습**: 변환 JSON→코너프레임 CoG 자동. p95 재학습 **R²=0.956(전 0.96과 일치=평행이동 불변 실증)**, CogX 중요도 0.987, 노드2874·트리100(구조 동일), 파리티 1.9e-15 → `layout_risk_p95.json` 교체(구본 `.center_backup.json`). 실험용 변형(p99/frac07/composite/both/treedata·RL .onnx)은 재현 불필요(수식/기본배치 탐색용, 결정 종료).
+- **⏳ 사용자 액션 필요**: SampleScene **BedAnchor를 truck-local로 (−1.05, 0, −3.05)=(−W/2·scale, 0, −L/2·scale) 이동** → 변환 JSON을 코너-anchor 기준으로 놓아 **화물 월드좌표=마이그레이션 전과 동일** → **주행 LTR 바이트 동일**이 검증 기준(평행이동 불변). RL은 새 프레임에서 재학습.
+- **참고**: 레거시 TestCases 2개는 옛 전치버그 bed(0.64×0.24)로 자기프레임 변환됨(무해). results.csv init_cog는 구주행값(신주행은 코너-anchor-local 로깅).
+
 ---
 
 _(새 항목은 이 아래에 추가)_

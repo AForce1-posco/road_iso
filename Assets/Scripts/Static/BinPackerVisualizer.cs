@@ -163,23 +163,23 @@ public class BinPackerVisualizer : MonoBehaviour
     {
         float lx = ruleConfig.trayLateralM, lz = ruleConfig.trayLengthM;
         float hy = ruleConfig.heightLimitM, fy = ruleConfig.floorTopY;
-        float hx = lx * 0.5f, hz = lz * 0.5f;
+        float cx = lx * 0.5f, cz = lz * 0.5f;   // rear-left 코너 원점 → 중심 = (cx, ·, cz)
 
         var floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
         floor.name = "TrayFloor";
         Destroy(floor.GetComponent<Collider>());
         floor.transform.SetParent(root, false);
-        floor.transform.localPosition = new Vector3(0f, fy - 0.003f, 0f);
+        floor.transform.localPosition = new Vector3(cx, fy - 0.003f, cz);
         floor.transform.localScale = new Vector3(lx, 0.006f, lz);
         floor.GetComponent<MeshRenderer>().sharedMaterial =
             CargoFactory.MakePBR(new Color(0.15f, 0.16f, 0.20f), 0.1f, 0.2f);
 
-        // 외곽 와이어 박스
+        // 외곽 와이어 박스 — x∈[0,lx], z∈[0,lz]
         var box = new List<Vector3>();
         Vector3[] c8 =
         {
-            new Vector3(-hx, fy, -hz), new Vector3(hx, fy, -hz), new Vector3(hx, fy, hz), new Vector3(-hx, fy, hz),
-            new Vector3(-hx, fy + hy, -hz), new Vector3(hx, fy + hy, -hz), new Vector3(hx, fy + hy, hz), new Vector3(-hx, fy + hy, hz),
+            new Vector3(0f, fy, 0f), new Vector3(lx, fy, 0f), new Vector3(lx, fy, lz), new Vector3(0f, fy, lz),
+            new Vector3(0f, fy + hy, 0f), new Vector3(lx, fy + hy, 0f), new Vector3(lx, fy + hy, lz), new Vector3(0f, fy + hy, lz),
         };
         int[,] edges = { {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7} };
         for (int i = 0; i < 12; i++) { box.Add(c8[edges[i, 0]]); box.Add(c8[edges[i, 1]]); }
@@ -191,13 +191,13 @@ public class BinPackerVisualizer : MonoBehaviour
             float gy = fy + 0.001f;
             for (int c = 0; c <= cols; c++)
             {
-                float x = -hx + c * lx / cols;
-                g.Add(new Vector3(x, gy, -hz)); g.Add(new Vector3(x, gy, hz));
+                float x = c * lx / cols;
+                g.Add(new Vector3(x, gy, 0f)); g.Add(new Vector3(x, gy, lz));
             }
             for (int r = 0; r <= rows; r++)
             {
-                float z = -hz + r * lz / rows;
-                g.Add(new Vector3(-hx, gy, z)); g.Add(new Vector3(hx, gy, z));
+                float z = r * lz / rows;
+                g.Add(new Vector3(0f, gy, z)); g.Add(new Vector3(lx, gy, z));
             }
             MakeLines("TrayGrid", g, new Color(1f, 1f, 1f, 0.25f));
         }
@@ -208,29 +208,30 @@ public class BinPackerVisualizer : MonoBehaviour
         ceil.name = "HeightLimitPlane";
         Destroy(ceil.GetComponent<Collider>());
         ceil.transform.SetParent(root, false);
-        ceil.transform.localPosition = new Vector3(0f, topY, 0f);
+        ceil.transform.localPosition = new Vector3(cx, topY, cz);
         ceil.transform.localScale = new Vector3(lx, 0.002f, lz);
         ceil.GetComponent<MeshRenderer>().sharedMaterial = MakeTransparent(new Color(0.95f, 0.2f, 0.2f, 0.22f));
 
         var barMat = CargoFactory.MakePBR(new Color(0.95f, 0.15f, 0.15f), 0.2f, 0.5f);
         Vector3[] c4 =
         {
-            new Vector3(-hx, topY, -hz), new Vector3(hx, topY, -hz),
-            new Vector3(hx, topY, hz),  new Vector3(-hx, topY, hz),
+            new Vector3(0f, topY, 0f), new Vector3(lx, topY, 0f),
+            new Vector3(lx, topY, lz), new Vector3(0f, topY, lz),
         };
         for (int i = 0; i < 4; i++) MakeBar("HeightLimitEdge" + i, c4[i], c4[(i + 1) % 4], 0.006f, barMat);
     }
 
     private void BuildCornerLabels()
     {
-        float hx = ruleConfig.trayLateralM * 0.5f, hz = ruleConfig.trayLengthM * 0.5f;
+        float lx = ruleConfig.trayLateralM, lz = ruleConfig.trayLengthM;
         float y = ruleConfig.floorTopY + 0.008f;
         Color front = new Color(1f, 0.55f, 0.25f);
         Color rear = new Color(0.35f, 0.8f, 1f);
-        MakeLabel("FL", new Vector3(-hx, y, hz), front);
-        MakeLabel("FR", new Vector3(hx, y, hz), front);
-        MakeLabel("RL", new Vector3(-hx, y, -hz), rear);
-        MakeLabel("RR", new Vector3(hx, y, -hz), rear);
+        // rear-left 코너 원점: RL=(0,0) RR=(lx,0)=뒤 | FL=(0,lz) FR=(lx,lz)=앞
+        MakeLabel("FL", new Vector3(0f, y, lz), front);
+        MakeLabel("FR", new Vector3(lx, y, lz), front);
+        MakeLabel("RL", new Vector3(0f, y, 0f), rear);
+        MakeLabel("RR", new Vector3(lx, y, 0f), rear);
     }
 
     private void MakeLabel(string text, Vector3 pos, Color c)
@@ -330,9 +331,9 @@ public class BinPackerVisualizer : MonoBehaviour
         cam.nearClipPlane = 0.01f;
 
         float lenZ = ruleConfig.trayLengthM;
-        Vector3 eye = new Vector3(lenZ * 0.9f, lenZ * 0.9f, -lenZ);
+        Vector3 look = new Vector3(ruleConfig.trayLateralM * 0.5f, ruleConfig.floorTopY + 0.05f, lenZ * 0.5f); // 트레이 중심
+        Vector3 eye = look + new Vector3(lenZ * 0.9f, lenZ * 0.9f, -lenZ);
         camGo.transform.localPosition = eye;
-        Vector3 look = new Vector3(0f, ruleConfig.floorTopY + 0.05f, 0f);
         camGo.transform.localRotation = Quaternion.LookRotation((look - eye).normalized, Vector3.up);
     }
 

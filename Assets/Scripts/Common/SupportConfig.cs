@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// 로드셀 1개의 수평 위치. 평판 바닥이라 높이(Y)는 필요 없어 Vector2(x, z)만.
-/// 좌표계: x=폭(좌-/우+), z=길이(후-/전+), 적재함 중심이 원점.
+/// 좌표계: x=폭(0=좌 ~ W=우), z=길이(0=뒤 ~ L=앞), 적재함 rear-left 코너가 원점(모든 값 양수).
 /// </summary>
 [Serializable]
 public struct SupportPoint
@@ -54,17 +54,17 @@ public struct SupportConfig
         }
     }
 
-    /// <summary>적재함 크기로부터 네 모서리 안쪽에 기본 배치를 만든다.</summary>
+    /// <summary>적재함 크기로부터 네 모서리 안쪽에 기본 배치를 만든다. (rear-left 코너 원점: x∈[0,W], z∈[0,L])</summary>
     public static SupportConfig Default(float bedWidthX, float bedLengthZ, float inset = 0.05f)
     {
-        float ax = bedWidthX * 0.5f - inset;
-        float bz = bedLengthZ * 0.5f - inset;
+        float xl = inset, xr = bedWidthX - inset;      // 좌/우
+        float zb = inset, zf = bedLengthZ - inset;     // 뒤/앞
         return new SupportConfig
         {
-            fl = new SupportPoint(-ax, bz),
-            fr = new SupportPoint(ax, bz),
-            rl = new SupportPoint(-ax, -bz),
-            rr = new SupportPoint(ax, -bz),
+            fl = new SupportPoint(xl, zf),
+            fr = new SupportPoint(xr, zf),
+            rl = new SupportPoint(xl, zb),
+            rr = new SupportPoint(xr, zb),
         };
     }
 }

@@ -92,6 +92,9 @@ public class CargoPlacer : MonoBehaviour
     public float EmptyMassKg => emptyMassKg;
     public RiskThresholds Thresholds => thresholds;
     public float BedTopY => transform.position.y + floorThickness; // 화물이 놓이는 바닥면
+    // rear-left 코너 원점: transform.position = 코너, 트레이는 +x·+z로 뻗음. 중심 = 코너 + 반치수.
+    public float TrayCenterX => transform.position.x + bedWidthX * 0.5f;
+    public float TrayCenterZ => transform.position.z + bedLengthZ * 0.5f;
     public bool HasWalls => hasWalls;
     public float WallTopY => transform.position.y + floorThickness + (hasWalls ? wallHeight : 0f);
     public bool PhysicsOn => physicsOn;
@@ -354,8 +357,8 @@ public class CargoPlacer : MonoBehaviour
         Vector3 p = ray.GetPoint(dist);
 
         Vector3 ext = dragItem.mr != null ? dragItem.mr.bounds.extents : dragItem.type.sizeM * 0.5f;
-        float x = ClampInside(p.x, transform.position.x, bedWidthX * 0.5f, ext.x);
-        float z = ClampInside(p.z, transform.position.z, bedLengthZ * 0.5f, ext.z);
+        float x = ClampInside(p.x, TrayCenterX, bedWidthX * 0.5f, ext.x);
+        float z = ClampInside(p.z, TrayCenterZ, bedLengthZ * 0.5f, ext.z);
         SnapXZ(ref x, ref z, ext, dragItem);
 
         bool overSized = ext.x > bedWidthX * 0.5f || ext.z > bedLengthZ * 0.5f;
@@ -379,10 +382,9 @@ public class CargoPlacer : MonoBehaviour
         Vector3 ext = it.mr != null ? it.mr.bounds.extents
             : (it.col != null ? it.col.bounds.extents : type.sizeM * 0.5f);
 
-        // 트레이 안쪽으로 XZ 클램프 (벽을 뚫지 않게)
-        float cx = transform.position.x, cz = transform.position.z;
-        float x = ClampInside(surfacePoint.x, cx, bedWidthX * 0.5f, ext.x);
-        float z = ClampInside(surfacePoint.z, cz, bedLengthZ * 0.5f, ext.z);
+        // 트레이 안쪽으로 XZ 클램프 (벽을 뚫지 않게) — 중심 기준 ± 반치수
+        float x = ClampInside(surfacePoint.x, TrayCenterX, bedWidthX * 0.5f, ext.x);
+        float z = ClampInside(surfacePoint.z, TrayCenterZ, bedLengthZ * 0.5f, ext.z);
         SnapXZ(ref x, ref z, ext, null);
 
         // 트레이보다 긴 화물(X 또는 Z 축)은 바닥에 놓으면 벽을 관통 →
@@ -449,8 +451,8 @@ public class CargoPlacer : MonoBehaviour
         }
 
         // 스냅(격자/밀기)이 트레이 밖으로 내보내지 않게 다시 안쪽으로 클램프
-        x = ClampInside(x, transform.position.x, bedWidthX * 0.5f, ext.x);
-        z = ClampInside(z, transform.position.z, bedLengthZ * 0.5f, ext.z);
+        x = ClampInside(x, TrayCenterX, bedWidthX * 0.5f, ext.x);
+        z = ClampInside(z, TrayCenterZ, bedLengthZ * 0.5f, ext.z);
     }
 
     // 근접(원점 쪽) 코너를 격자선에 스냅 → 원점 쪽 면이 항상 칸 경계에 앉음.
@@ -488,9 +490,9 @@ public class CargoPlacer : MonoBehaviour
             if (d2 < dist) { dist = d2; best = itMin - half; found = true; }
         }
 
-        // 트레이 벽에도 밀착
+        // 트레이 벽에도 밀착 (벽 = 트레이중심 ± 반치수)
         float trayHalf = axis == 0 ? bedWidthX * 0.5f : bedLengthZ * 0.5f;
-        float origin = axis == 0 ? transform.position.x : transform.position.z;
+        float origin = axis == 0 ? TrayCenterX : TrayCenterZ;
         float dw1 = Mathf.Abs(thisMin - (origin - trayHalf));
         if (dw1 < dist) { dist = dw1; best = origin - trayHalf + half; found = true; }
         float dw2 = Mathf.Abs(thisMax - (origin + trayHalf));
@@ -504,8 +506,8 @@ public class CargoPlacer : MonoBehaviour
     private void PushOutOfOverlap(ref float x, ref float z, Vector3 ext, Item exclude)
     {
         float g = Mathf.Max(1e-4f, gridCellSizeM);
-        float sx = x - transform.position.x >= 0f ? 1f : -1f;
-        float sz = z - transform.position.z >= 0f ? 1f : -1f;
+        float sx = x - TrayCenterX >= 0f ? 1f : -1f;   // 중심 기준 바깥으로 밀기
+        float sz = z - TrayCenterZ >= 0f ? 1f : -1f;
         int guard = 0;
         while (OverlapsExisting(x, z, ext, exclude) && guard++ < 200)
         {
@@ -584,8 +586,8 @@ public class CargoPlacer : MonoBehaviour
 
         CargoType type = cargoTypes[Mathf.Clamp(activeTypeIndex, 0, cargoTypes.Length - 1)];
         Vector3 ext = RotatedExtents(type.sizeM, placementRot);
-        float x = ClampInside(p.x, transform.position.x, bedWidthX * 0.5f, ext.x);
-        float z = ClampInside(p.z, transform.position.z, bedLengthZ * 0.5f, ext.z);
+        float x = ClampInside(p.x, TrayCenterX, bedWidthX * 0.5f, ext.x);
+        float z = ClampInside(p.z, TrayCenterZ, bedLengthZ * 0.5f, ext.z);
         SnapXZ(ref x, ref z, ext, null);
 
         if (ghost == null) ghost = CreateGhost();
@@ -799,7 +801,8 @@ public class CargoPlacer : MonoBehaviour
         if (cam == null) cam = Camera.main;
         if (cam == null) return;
 
-        Vector3 center = transform.position + Vector3.up * (floorThickness + wallHeight * 0.5f);
+        // 코너 원점 → 트레이 중심 = 코너 + 반치수
+        Vector3 center = transform.position + new Vector3(bedWidthX * 0.5f, floorThickness + wallHeight * 0.5f, bedLengthZ * 0.5f);
         float span = Mathf.Max(bedWidthX, bedLengthZ) * 1.4f;
         float vfov = cam.fieldOfView * Mathf.Deg2Rad;
         float dist = Mathf.Max(0.4f, span / (2f * Mathf.Tan(vfov * 0.5f)));
@@ -838,7 +841,9 @@ public class CargoPlacer : MonoBehaviour
         Material floorMat = bedMaterial != null ? bedMaterial : CargoFactory.MakeLit(new Color(0.16f, 0.17f, 0.21f));
         Material wallMat = CargoFactory.MakeLit(new Color(0.24f, 0.26f, 0.31f));
 
-        GameObject floor = MakeBox("BedFloor", new Vector3(0f, floorThickness * 0.5f, 0f),
+        // rear-left 코너 원점: 트레이는 x∈[0,W]·z∈[0,L], 바닥/천장 중심 = (cx, ·, cz)
+        float cx = bedWidthX * 0.5f, cz = bedLengthZ * 0.5f;
+        GameObject floor = MakeBox("BedFloor", new Vector3(cx, floorThickness * 0.5f, cz),
             new Vector3(bedWidthX, floorThickness, bedLengthZ), floorMat);
         bedCollider = floor.GetComponent<BoxCollider>();
 
@@ -848,14 +853,12 @@ public class CargoPlacer : MonoBehaviour
         if (!hasWalls) return;
 
         float wy = floorThickness + wallHeight * 0.5f;
-        float wx = bedWidthX * 0.5f + wallThickness * 0.5f;
-        float wz = bedLengthZ * 0.5f + wallThickness * 0.5f;
         Vector3 sideScale = new Vector3(wallThickness, wallHeight, bedLengthZ + 2f * wallThickness);
         Vector3 endScale = new Vector3(bedWidthX, wallHeight, wallThickness);
-        MakeBox("WallLeft", new Vector3(-wx, wy, 0f), sideScale, wallMat);
-        MakeBox("WallRight", new Vector3(wx, wy, 0f), sideScale, wallMat);
-        MakeBox("WallBack", new Vector3(0f, wy, -wz), endScale, wallMat);
-        MakeBox("WallFront", new Vector3(0f, wy, wz), endScale, wallMat);
+        MakeBox("WallLeft", new Vector3(-wallThickness * 0.5f, wy, cz), sideScale, wallMat);            // x=0
+        MakeBox("WallRight", new Vector3(bedWidthX + wallThickness * 0.5f, wy, cz), sideScale, wallMat); // x=W
+        MakeBox("WallBack", new Vector3(cx, wy, -wallThickness * 0.5f), endScale, wallMat);              // z=0
+        MakeBox("WallFront", new Vector3(cx, wy, bedLengthZ + wallThickness * 0.5f), endScale, wallMat); // z=L
     }
 
     private GameObject MakeBox(string name, Vector3 localPos, Vector3 scale, Material mat)
@@ -875,34 +878,35 @@ public class CargoPlacer : MonoBehaviour
     {
         float baseY = floorThickness;                    // 바닥면
         float topY = floorThickness + maxStackHeightM;   // 한도 높이
-        float hx = bedWidthX * 0.5f, hz = bedLengthZ * 0.5f, th = 0.006f;
+        float cx = bedWidthX * 0.5f, cz = bedLengthZ * 0.5f, th = 0.006f;   // 코너 원점 → 중심 (cx,cz)
         Material red = CargoFactory.MakePBR(new Color(0.95f, 0.15f, 0.15f), 0.2f, 0.5f);
         Material redDim = CargoFactory.MakePBR(new Color(0.8f, 0.3f, 0.3f), 0.2f, 0.4f);
 
-        // 상단 테두리 (X 2 + Z 2)
-        MakeBox("HeightLimit_TopXn", new Vector3(0f, topY, -hz), new Vector3(bedWidthX, th, th), red);
-        MakeBox("HeightLimit_TopXp", new Vector3(0f, topY,  hz), new Vector3(bedWidthX, th, th), red);
-        MakeBox("HeightLimit_TopZn", new Vector3(-hx, topY, 0f), new Vector3(th, th, bedLengthZ), red);
-        MakeBox("HeightLimit_TopZp", new Vector3( hx, topY, 0f), new Vector3(th, th, bedLengthZ), red);
+        // 상단 테두리 (X 2 + Z 2) — z=0/z=L, x=0/x=W
+        MakeBox("HeightLimit_TopXn", new Vector3(cx, topY, 0f), new Vector3(bedWidthX, th, th), red);
+        MakeBox("HeightLimit_TopXp", new Vector3(cx, topY, bedLengthZ), new Vector3(bedWidthX, th, th), red);
+        MakeBox("HeightLimit_TopZn", new Vector3(0f, topY, cz), new Vector3(th, th, bedLengthZ), red);
+        MakeBox("HeightLimit_TopZp", new Vector3(bedWidthX, topY, cz), new Vector3(th, th, bedLengthZ), red);
 
         // 4모서리 수직 기둥 (바닥 → 한도)
         float midY = baseY + maxStackHeightM * 0.5f;
-        MakeBox("HeightLimit_PostA", new Vector3(-hx, midY, -hz), new Vector3(th, maxStackHeightM, th), redDim);
-        MakeBox("HeightLimit_PostB", new Vector3( hx, midY, -hz), new Vector3(th, maxStackHeightM, th), redDim);
-        MakeBox("HeightLimit_PostC", new Vector3(-hx, midY,  hz), new Vector3(th, maxStackHeightM, th), redDim);
-        MakeBox("HeightLimit_PostD", new Vector3( hx, midY,  hz), new Vector3(th, maxStackHeightM, th), redDim);
+        MakeBox("HeightLimit_PostA", new Vector3(0f, midY, 0f), new Vector3(th, maxStackHeightM, th), redDim);
+        MakeBox("HeightLimit_PostB", new Vector3(bedWidthX, midY, 0f), new Vector3(th, maxStackHeightM, th), redDim);
+        MakeBox("HeightLimit_PostC", new Vector3(0f, midY, bedLengthZ), new Vector3(th, maxStackHeightM, th), redDim);
+        MakeBox("HeightLimit_PostD", new Vector3(bedWidthX, midY, bedLengthZ), new Vector3(th, maxStackHeightM, th), redDim);
     }
 
     // 적재함 4코너 FL/FR/RL/RR (LoadCalculator 규약: front=+z=운전석/캐빈, right=+x).
     // 앞(+z, 주황)으로는 오버행 불가, 뒤(-z, 하늘색)만 파이프 오버행 허용.
     private void BuildCornerLabels()
     {
-        float hx = bedWidthX * 0.5f, hz = bedLengthZ * 0.5f, y = floorThickness + 0.008f;
+        float y = floorThickness + 0.008f;
         Color front = new Color(1f, 0.55f, 0.25f), rear = new Color(0.35f, 0.8f, 1f);
-        MakeCornerLabel("FL", new Vector3(-hx, y,  hz), front);
-        MakeCornerLabel("FR", new Vector3( hx, y,  hz), front);
-        MakeCornerLabel("RL", new Vector3(-hx, y, -hz), rear);
-        MakeCornerLabel("RR", new Vector3( hx, y, -hz), rear);
+        // rear-left 코너 원점: RL=(0,0) RR=(W,0)=뒤 | FL=(0,L) FR=(W,L)=앞
+        MakeCornerLabel("FL", new Vector3(0f, y, bedLengthZ), front);
+        MakeCornerLabel("FR", new Vector3(bedWidthX, y, bedLengthZ), front);
+        MakeCornerLabel("RL", new Vector3(0f, y, 0f), rear);
+        MakeCornerLabel("RR", new Vector3(bedWidthX, y, 0f), rear);
     }
 
     private void MakeCornerLabel(string text, Vector3 localPos, Color c)
@@ -937,15 +941,14 @@ public class CargoPlacer : MonoBehaviour
         mr.sharedMaterial = mat;
 
         float y = floorThickness + 0.001f;
-        float hx = bedWidthX * 0.5f, hz = bedLengthZ * 0.5f;
-        float step = Mathf.Max(0.005f, gridCellSizeM);
+        float step = Mathf.Max(0.005f, gridCellSizeM);   // 코너 원점: x∈[0,W], z∈[0,L]
         var verts = new List<Vector3>();
         var idx = new List<int>();
 
-        for (float x = -hx; x <= hx + 1e-4f; x += step)
-            AddLine(verts, idx, new Vector3(x, y, -hz), new Vector3(x, y, hz));
-        for (float z = -hz; z <= hz + 1e-4f; z += step)
-            AddLine(verts, idx, new Vector3(-hx, y, z), new Vector3(hx, y, z));
+        for (float x = 0f; x <= bedWidthX + 1e-4f; x += step)
+            AddLine(verts, idx, new Vector3(x, y, 0f), new Vector3(x, y, bedLengthZ));
+        for (float z = 0f; z <= bedLengthZ + 1e-4f; z += step)
+            AddLine(verts, idx, new Vector3(0f, y, z), new Vector3(bedWidthX, y, z));
 
         var mesh = new Mesh { name = "GridMesh" };
         mesh.SetVertices(verts);

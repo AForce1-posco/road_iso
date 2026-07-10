@@ -78,13 +78,16 @@ public class RefinementAgent : Agent
     private bool setupDone;
     private float startFinal;      // 에피소드 시작(빈패커) Final — 개선량 계산 기준
     private int validMoves;        // 이번 에피소드 유효 이동 수 (계측)
+    private bool diagLogged;       // surrogate 진단 로그 1회용
     private float minHalfXZ;       // manifest 중 가장 작은 화물의 최소 반치수 (경계 마스킹용)
 
     /// <summary>시각화용 읽기 전용 배치.</summary>
     public IReadOnlyList<RuleChecker.PlacedItem> PlacedItems => placed;
 
-    private float HalfX => ruleConfig.trayLateralM * 0.5f;
-    private float HalfZ => ruleConfig.trayLengthM * 0.5f;
+    private float HalfX => ruleConfig.trayLateralM * 0.5f;   // 중심 x = W/2 (균형기준, 원점 아님)
+    private float HalfZ => ruleConfig.trayLengthM * 0.5f;    // 중심 z = L/2
+    private float MaxX => ruleConfig.trayLateralM;           // 우측 경계 (좌=0)
+    private float MaxZ => ruleConfig.trayLengthM;            // 앞 경계 (뒤=0)
     private int NumCells => cols * rows;
     private int ObsSize => NumCells + 3 + 1 + 2;   // 높이맵 + CoG(3) + 질량(1) + 편차(2)
 
@@ -132,6 +135,17 @@ public class RefinementAgent : Agent
         validMoves = 0;
         prevFinal = placed.Count > 0 ? Score() : 0f;
         startFinal = prevFinal;
+
+        // ── 진단(1회): surrogate가 빈패커 시작배치에 실제로 뱉는 위험값 ──
+        // 올바른 p99 = 예측위험 ≈ 0.50(빈패커 p99), startFinal ≈ −0.50(scale1). ~0.87이면 모델/스케일 틀림.
+        if (!diagLogged)
+        {
+            diagLogged = true;
+            float rawRisk = (useSurrogateReward && riskModel != null && riskModel.Loaded)
+                            ? riskModel.Predict(BuildRiskFeatures()) : float.NaN;
+            Debug.Log($"[Refine 진단] surrogate='{surrogateResourceName}' loaded={(riskModel != null && riskModel.Loaded)} scale={surrogateRewardScale} " +
+                      $"| 빈패커시작 예측위험={rawRisk:F4}  startFinal(Score)={startFinal:F4}  (정상 p99: 위험≈0.50·Score≈−0.50)");
+        }
         if (verboseLog) Debug.Log($"[Refine 시작] {placed.Count}개, Final={prevFinal:F3}");
     }
 
@@ -145,16 +159,16 @@ public class RefinementAgent : Agent
                 float h = (HeightAt(cc.x, cc.y) - ruleConfig.floorTopY) / Mathf.Max(1e-4f, ruleConfig.heightLimitM);
                 sensor.AddObservation(Mathf.Clamp01(h));
             }
-        // 2) CoG
+        // 2) CoG 위치 (코너 원점 정규화 [0,1]: 0=좌/뒤, 1=우/앞)
         Vector3 cog = Cog();
-        sensor.AddObservation(HalfX > 1e-6f ? cog.x / HalfX : 0f);
-        sensor.AddObservation(HalfZ > 1e-6f ? cog.z / HalfZ : 0f);
+        sensor.AddObservation(MaxX > 1e-6f ? cog.x / MaxX : 0f);
+        sensor.AddObservation(MaxZ > 1e-6f ? cog.z / MaxZ : 0f);
         sensor.AddObservation((cog.y - ruleConfig.floorTopY) / Mathf.Max(1e-4f, ruleConfig.heightLimitM));
         // 3) 총질량
         sensor.AddObservation(TotalMass() / Mathf.Max(1e-4f, ruleConfig.maxPayloadKg));
-        // 4) CoG 편차(절대)
-        sensor.AddObservation(HalfX > 1e-6f ? Mathf.Abs(cog.x) / HalfX : 0f);
-        sensor.AddObservation(HalfZ > 1e-6f ? Mathf.Abs(cog.z) / HalfZ : 0f);
+        // 4) CoG 편차(절대, 균형중심 W/2·L/2 기준, 0=중앙 1=끝)
+        sensor.AddObservation(HalfX > 1e-6f ? Mathf.Abs(cog.x - HalfX) / HalfX : 0f);
+        sensor.AddObservation(HalfZ > 1e-6f ? Mathf.Abs(cog.z - HalfZ) / HalfZ : 0f);
     }
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask mask)
@@ -171,9 +185,9 @@ public class RefinementAgent : Agent
                 bool block =
                     // (1) 높이 한도까지 꽉 찬 셀 — 그 위엔 아무것도 못 올림
                     HeightAt(cc.x, cc.y) >= ruleConfig.floorTopY + ruleConfig.heightLimitM - 1e-3f ||
-                    // (2) 최소 화물조차 중심으로 놓으면 트레이를 벗어나는 가장자리 셀
-                    cc.x - minHalfXZ < -HalfX - 1e-4f || cc.x + minHalfXZ > HalfX + 1e-4f ||
-                    cc.y - minHalfXZ < -HalfZ - 1e-4f || cc.y + minHalfXZ > HalfZ + 1e-4f;
+                    // (2) 최소 화물조차 중심으로 놓으면 트레이를 벗어나는 가장자리 셀 (코너 원점 [0,W]·[0,L])
+                    cc.x - minHalfXZ < -1e-4f || cc.x + minHalfXZ > MaxX + 1e-4f ||
+                    cc.y - minHalfXZ < -1e-4f || cc.y + minHalfXZ > MaxZ + 1e-4f;
                 if (block) mask.SetActionEnabled(1, r * cols + c, false);
             }
     }
@@ -240,10 +254,10 @@ public class RefinementAgent : Agent
     }
 
     // ── 지오메트리 헬퍼 (placed는 호출 시점의 현재 배치) ──────────────────────
-    private Vector2 CellCenter(int c, int r)
+    private Vector2 CellCenter(int c, int r)   // rear-left 코너 원점
     {
         float cw = ruleConfig.trayLateralM / cols, cd = ruleConfig.trayLengthM / rows;
-        return new Vector2(-HalfX + (c + 0.5f) * cw, -HalfZ + (r + 0.5f) * cd);
+        return new Vector2((c + 0.5f) * cw, (r + 0.5f) * cd);
     }
 
     /// <summary>(x,z)에 half 화물을 떨어뜨렸을 때 안착 바닥 y. (placed는 자기 자신 제거된 상태로 호출)</summary>

@@ -6,9 +6,10 @@ using UnityEngine;
 /// Hard(불가/절대금지) = IsValid()가 false → 행동 마스킹.
 /// 측정치(지지율·축하중·CoG편차 등)는 Evaluate()로 노출 → S2 보상에서 사용.
 ///
-/// 좌표계 (Unity 트레이 로컬, m, 원점=트레이 중심):
-///   x = 좌우(lateral, 21cm)   y = 높이(27cm 적층한도)   z = 주행/길이(61cm)
+/// 좌표계 (Unity 트레이 로컬, m, 원점=트레이 rear-left 코너, 모든 값 양수):
+///   x = 좌우(lateral, 0=좌 ~ 0.21=우)   y = 높이(0~0.27 적층한도)   z = 길이(0=뒤/테일게이트 ~ 0.61=앞/캐빈)
 ///   ※ 설계문서 x(주행) = Unity z, 설계문서 y(좌우) = Unity x, 설계문서 z(높이) = Unity y.
+///   축 방향: right=+x, front(캐빈)=+z (LoadCalculator 기준). 중심(균형기준점)=(W/2,·,L/2).
 ///   바닥 top y = floorTopY. 화물 AABB는 회전(0/90) 반영된 축정렬 halfSize로 표현.
 /// </summary>
 public class RuleChecker
@@ -35,13 +36,16 @@ public class RuleChecker
     {
         public float totalMassKg;
         public float supportRatio;   // 후보의 밑면 지지율 (0~1)
-        public Vector3 cog;          // 트레이 로컬 CoG (보상 CGS용)
-        public float cogForeAftFrac; // |cog.z| / trayHalfZ (0=중앙, 1=끝)
-        public float cogLateralFrac; // |cog.x| / trayHalfX
+        public Vector3 cog;          // 트레이 로컬 CoG (보상 CGS용, rear-left 원점)
+        public float cogForeAftFrac; // |cog.z - L/2| / (L/2) (0=중앙, 1=끝)
+        public float cogLateralFrac; // |cog.x - W/2| / (W/2)
     }
 
-    float TrayHalfX => cfg.trayLateralM * 0.5f;
-    float TrayHalfZ => cfg.trayLengthM * 0.5f;
+    // 균형기준점(중심) = 원점 아님. rear-left 원점 기준 트레이 중심의 좌표(= 반폭/반길이).
+    float TrayHalfX => cfg.trayLateralM * 0.5f;   // 중심 x = W/2
+    float TrayHalfZ => cfg.trayLengthM * 0.5f;    // 중심 z = L/2
+    float TrayMaxX => cfg.trayLateralM;           // 우측 경계 (좌=0)
+    float TrayMaxZ => cfg.trayLengthM;            // 앞(캐빈) 경계 (뒤/테일게이트=0)
     float HeightTop => cfg.floorTopY + cfg.heightLimitM;
 
     // ── Hard 판정: 하나라도 걸리면 false + 사유 ─────────────────────────────
@@ -72,14 +76,15 @@ public class RuleChecker
     // 축 규약: LoadCalculator 기준 front=+z, right=+x.
     bool H2_Bounds(PlacedItem c)
     {
-        if (c.center.x - c.halfSize.x < -TrayHalfX - cfg.eps) return false;
-        if (c.center.x + c.halfSize.x > TrayHalfX + cfg.eps) return false;
+        // x: 좌(0) ~ 우(W)
+        if (c.center.x - c.halfSize.x < -cfg.eps) return false;
+        if (c.center.x + c.halfSize.x > TrayMaxX + cfg.eps) return false;
         if (c.Bottom < cfg.floorTopY - cfg.eps) return false;
 
-        // 앞(+z=캐빈) 경계는 모든 화물 강제 — 오버행 금지
-        if (c.center.z + c.halfSize.z > TrayHalfZ + cfg.eps) return false;
-        // 뒤(-z=테일게이트)는 파이프만 오버행 허용
-        if (c.Shape != CargoShape.Pipe && c.center.z - c.halfSize.z < -TrayHalfZ - cfg.eps) return false;
+        // 앞(+z=캐빈, z=L) 경계는 모든 화물 강제 — 오버행 금지
+        if (c.center.z + c.halfSize.z > TrayMaxZ + cfg.eps) return false;
+        // 뒤(z=0=테일게이트)는 파이프만 오버행 허용
+        if (c.Shape != CargoShape.Pipe && c.center.z - c.halfSize.z < -cfg.eps) return false;
 
         return true;
     }
@@ -146,8 +151,8 @@ public class RuleChecker
             totalMassKg = TotalMass(placed) + cand.Mass,
             supportRatio = SupportRatio(placed, cand),
             cog = cog,
-            cogForeAftFrac = TrayHalfZ > 1e-6f ? Mathf.Abs(cog.z) / TrayHalfZ : 0f,
-            cogLateralFrac = TrayHalfX > 1e-6f ? Mathf.Abs(cog.x) / TrayHalfX : 0f,
+            cogForeAftFrac = TrayHalfZ > 1e-6f ? Mathf.Abs(cog.z - TrayHalfZ) / TrayHalfZ : 0f,
+            cogLateralFrac = TrayHalfX > 1e-6f ? Mathf.Abs(cog.x - TrayHalfX) / TrayHalfX : 0f,
         };
     }
 

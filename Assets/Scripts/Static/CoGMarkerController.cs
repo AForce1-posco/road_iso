@@ -58,9 +58,9 @@ public class CoGMarkerController : MonoBehaviour
 
         float empty = placer.EmptyMassKg;
         Vector3 emptyCoG = new Vector3(
-            placer.transform.position.x,
+            placer.TrayCenterX,   // 빈 적재함 CoG = 트레이 중심 (코너 원점)
             (placer.transform.position.y + placer.BedTopY) * 0.5f,
-            placer.transform.position.z);
+            placer.TrayCenterZ);
 
         float total = LoadCalculator.ComputeTotalMass(cargo, empty);
         if (total <= 0f)

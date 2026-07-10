@@ -100,7 +100,7 @@ public class CalibrationRunner : MonoBehaviour
             Visualize(vc);
     }
 
-    /// <summary>목업 프레임(RL 원점) → Unity 트레이 중심 로컬로 옮겨 정적 씬에 표시.</summary>
+    /// <summary>목업 프레임(RL 원점) → Unity 트레이 로컬(이제 동일 RL 코너 원점). cm→m 스케일만.</summary>
     private void Visualize(Case cs)
     {
         var cat = CargoCatalog.CreateDefault();
@@ -111,9 +111,9 @@ public class CalibrationRunner : MonoBehaviour
         foreach (var it in cs.items)
         {
             if (!byKey.TryGetValue(it.baseId, out CargoType type)) continue;
-            // Unity: x=좌우(중심 기준), z=전후(중심 기준), y=높이(바닥 위). cm→m.
-            float ux = (it.center.x - lateralCm * 0.5f) * 0.01f;
-            float uz = (it.center.y - foreaftCm * 0.5f) * 0.01f;
+            // Unity: x=좌우(RL 코너 기준), z=전후(RL 코너 기준), y=높이(바닥 위). cm→m. (RL 원점 동일 → 센터링 없음)
+            float ux = it.center.x * 0.01f;
+            float uz = it.center.y * 0.01f;
             float uy = it.center.z * 0.01f;
             file.cargo.Add(new CargoLayoutEntry { type = type.name, localPos = new Vector3(ux, uy, uz), localEuler = Vector3.zero, secured = true });
         }

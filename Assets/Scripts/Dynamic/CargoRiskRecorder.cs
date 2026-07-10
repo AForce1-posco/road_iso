@@ -206,9 +206,10 @@ public class CargoRiskRecorder : MonoBehaviour
             if (shift > maxShiftPer[i]) maxShiftPer[i] = shift;
             if (shift > maxShiftM) maxShiftM = shift;
 
+            // 코너 원점(rear-left): local x∈[0,W]·z∈[0,L] (half=W/2,L/2 → 전폭=2·half). 양 끝 밖이면 이탈
             if (!fell[i] &&
-                (Mathf.Abs(local.x) > half.x + fallMarginM ||
-                 Mathf.Abs(local.z) > half.y + fallMarginM ||
+                (local.x < -fallMarginM || local.x > 2f * half.x + fallMarginM ||
+                 local.z < -fallMarginM || local.z > 2f * half.y + fallMarginM ||
                  local.y < -fallBelowM))
             {
                 fell[i] = true;

@@ -11,7 +11,7 @@ using UnityEngine;
 public class CargoBedLoader : MonoBehaviour
 {
     [Header("트럭 연결")]
-    public Transform bedAnchor;    // 적재함 바닥 중심(트럭 본체의 자식)
+    public Transform bedAnchor;    // 적재함 바닥 rear-left 코너 = 원점(트럭 본체의 자식). 트레이는 여기서 +x(우)·+z(앞)로 뻗음
     public Rigidbody truckBody;    // 고정 화물을 결박할 트럭 Rigidbody
 
     [Header("화물 종류 (정적과 동일하게)")]
@@ -307,14 +307,14 @@ public class CargoBedLoader : MonoBehaviour
         trayRoot = new GameObject("CargoTray").transform;
         trayRoot.SetParent(bedAnchor, false); // 트럭과 함께 움직임
 
-        MakeBox("Floor", new Vector3(0, floorT * 0.5f, 0), new Vector3(w, floorT, l), mat);
+        // rear-left 코너 원점: 트레이 바닥은 x∈[0,w]·z∈[0,l], 바닥 중심 = (w/2, ·, l/2)
+        float cx = w * 0.5f, cz = l * 0.5f;
+        MakeBox("Floor", new Vector3(cx, floorT * 0.5f, cz), new Vector3(w, floorT, l), mat);
         float wy = floorT + wallH * 0.5f;
-        float wx = w * 0.5f + wallT * 0.5f;
-        float wz = l * 0.5f + wallT * 0.5f;
-        MakeBox("WallL", new Vector3(-wx, wy, 0), new Vector3(wallT, wallH, l + 2 * wallT), mat);
-        MakeBox("WallR", new Vector3(wx, wy, 0), new Vector3(wallT, wallH, l + 2 * wallT), mat);
-        MakeBox("WallB", new Vector3(0, wy, -wz), new Vector3(w, wallH, wallT), mat);
-        MakeBox("WallF", new Vector3(0, wy, wz), new Vector3(w, wallH, wallT), mat);
+        MakeBox("WallL", new Vector3(-wallT * 0.5f, wy, cz), new Vector3(wallT, wallH, l + 2 * wallT), mat);      // x=0 좌벽
+        MakeBox("WallR", new Vector3(w + wallT * 0.5f, wy, cz), new Vector3(wallT, wallH, l + 2 * wallT), mat);  // x=w 우벽
+        MakeBox("WallB", new Vector3(cx, wy, -wallT * 0.5f), new Vector3(w, wallH, wallT), mat);                 // z=0 뒤벽
+        MakeBox("WallF", new Vector3(cx, wy, l + wallT * 0.5f), new Vector3(w, wallH, wallT), mat);              // z=l 앞벽
     }
 
     private void MakeBox(string name, Vector3 localPos, Vector3 scaleV, Material mat)
@@ -333,12 +333,13 @@ public class CargoBedLoader : MonoBehaviour
     {
         if (bedAnchor != null)
         {
-            float w = 0.21f * scale, l = 0.61f * scale, h = 0.06f * scale;   // 실제 적재함 폭0.21×길이0.61 (옛 0.64×0.24 = 가로로 보이던 버그)
+            float w = 0.21f * scale, l = 0.61f * scale, h = 0.06f * scale;   // 실제 적재함 폭0.21×길이0.61
+            float cx = w * 0.5f, cz = l * 0.5f;                              // rear-left 코너 원점 → 중심은 (w/2, ·, l/2)
             Gizmos.matrix = Matrix4x4.TRS(bedAnchor.position, bedAnchor.rotation, Vector3.one);
             Gizmos.color = new Color(0.3f, 0.8f, 1f, 0.9f);
-            Gizmos.DrawWireCube(new Vector3(0f, h * 0.5f, 0f), new Vector3(w, h, l)); // 트레이 부피
+            Gizmos.DrawWireCube(new Vector3(cx, h * 0.5f, cz), new Vector3(w, h, l)); // 트레이 부피
             Gizmos.color = new Color(1f, 0.9f, 0.2f, 0.9f);
-            Gizmos.DrawWireCube(Vector3.zero, new Vector3(w, 0.001f, l));             // 바닥면
+            Gizmos.DrawWireCube(new Vector3(cx, 0f, cz), new Vector3(w, 0.001f, l));  // 바닥면
         }
         if (Application.isPlaying && truckBody != null)
         {
@@ -346,6 +347,41 @@ public class CargoBedLoader : MonoBehaviour
             Gizmos.color = Color.magenta;
             Gizmos.DrawSphere(truckBody.worldCenterOfMass, 0.15f); // 적재 반영된 트럭 무게중심
         }
+    }
+
+    // ── 정렬 도구: bedAnchor(rear-left 코너)를 트럭 바퀴 좌우중심에 맞춰 트레이를 좌우 정중앙에 놓음 ──
+    // 우클릭 컨텍스트 메뉴(에디트/플레이 모두). z(전후)는 안 건드림 — 짐칸 앞뒤 위치는 수동으로.
+    [ContextMenu("Center Tray Laterally on Truck (wheels)")]
+    public void CenterTrayLaterally()
+    {
+        Transform truck = truckBody != null ? truckBody.transform : null;
+        if (truck == null) { var vc = FindObjectOfType<VehicleController>(); if (vc != null) truck = vc.transform; }
+        if (bedAnchor == null && truck != null)
+            foreach (Transform tr in truck.GetComponentsInChildren<Transform>())
+                if (tr.name == "BedAnchor") { bedAnchor = tr; break; }
+        if (truck == null || bedAnchor == null) { Debug.LogWarning("[정렬] 트럭/bedAnchor 못 찾음"); return; }
+
+        var wheels = truck.GetComponentsInChildren<WheelCollider>();
+        if (wheels.Length == 0) { Debug.LogWarning("[정렬] WheelCollider 없음 — 바퀴 기준 정렬 불가"); return; }
+
+        // 바퀴 좌우 중심 (트럭 로컬 x) = 트럭 좌우 물리 중심선
+        float sx = 0f;
+        foreach (var w in wheels) sx += truck.InverseTransformPoint(w.transform.position).x;
+        float wheelCenterX = sx / wheels.Length;
+
+        // 현재 트레이 중심(=bedAnchor 로컬 (halfW,·,halfL))의 트럭-로컬 x. 치수는 기즈모와 동일 0.21×0.61.
+        float halfW = 0.21f * scale * 0.5f, halfL = 0.61f * scale * 0.5f;
+        Vector3 trayCenterWorld = bedAnchor.TransformPoint(new Vector3(halfW, 0f, halfL));
+        float trayCenterX = truck.InverseTransformPoint(trayCenterWorld).x;
+
+        // 좌우(truck.right)로 dx 이동 → 트레이중심 x == 바퀴중심 x
+        float dx = wheelCenterX - trayCenterX;
+        Vector3 before = bedAnchor.position;
+        bedAnchor.position += truck.right * dx;
+#if UNITY_EDITOR
+        if (!Application.isPlaying) UnityEditor.EditorUtility.SetDirty(bedAnchor);
+#endif
+        Debug.Log($"[정렬] 트레이 좌우 중심 → 바퀴중심 정렬. 이동 Δx={dx:F4}m(스케일). 바퀴 {wheels.Length}개, 트레이중심x {trayCenterX:F3}→{wheelCenterX:F3}. bedAnchor {before} → {bedAnchor.position}");
     }
 
     private CargoType FindType(string name)

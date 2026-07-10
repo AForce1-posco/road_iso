@@ -10,7 +10,7 @@ using UnityEngine;
 /// 스텝 보상(shaping) + 최종 보상 둘 다 제공. Hard 위반은 RuleChecker가 마스킹하므로 여기선 가정하지 않음.
 /// RewardConfig로 가중치·정규화 기준 인스펙터 튜닝(DOE용). RuleChecker(지지율·CoG) 재사용.
 ///
-/// 좌표계: RuleChecker와 동일 (Unity 로컬 m, x=좌우 y=높이 z=주행/길이, 원점=트레이 중심).
+/// 좌표계: RuleChecker와 동일 (Unity 로컬 m, x=좌우 y=높이 z=주행/길이, 원점=트레이 rear-left 코너, 중심=W/2·L/2).
 /// </summary>
 public class RewardCalculator
 {
@@ -23,8 +23,10 @@ public class RewardCalculator
         rules = new RuleChecker(ruleConfig ?? new RuleConfig());
     }
 
-    float TrayHalfX => rules.cfg.trayLateralM * 0.5f;
-    float TrayHalfZ => rules.cfg.trayLengthM * 0.5f;
+    float TrayHalfX => rules.cfg.trayLateralM * 0.5f;   // 중심 x = W/2 (원점 아님)
+    float TrayHalfZ => rules.cfg.trayLengthM * 0.5f;    // 중심 z = L/2
+    float TrayMaxX => rules.cfg.trayLateralM;           // 우측 경계 (좌=0)
+    float TrayMaxZ => rules.cfg.trayLengthM;            // 앞 경계 (뒤=0)
     float HeightLimit => rules.cfg.heightLimitM;
     float FloorTop => rules.cfg.floorTopY;
     float TrayVolume => rules.cfg.trayLateralM * rules.cfg.trayLengthM * rules.cfg.heightLimitM;
@@ -98,8 +100,11 @@ public class RewardCalculator
         foreach (var p in placed)
         {
             float nearWall = 0f;
-            nearWall += Mathf.Clamp01(1f - (TrayHalfX - Mathf.Abs(p.center.x) - p.halfSize.x) / cfg.contactGap);
-            nearWall += Mathf.Clamp01(1f - (TrayHalfZ - Mathf.Abs(p.center.z) - p.halfSize.z) / cfg.contactGap);
+            // 가장 가까운 벽까지 간격 (코너 원점: 좌우 min(left, W-right), 앞뒤 min(back, L-front))
+            float gapX = Mathf.Min(p.center.x - p.halfSize.x, TrayMaxX - (p.center.x + p.halfSize.x));
+            float gapZ = Mathf.Min(p.center.z - p.halfSize.z, TrayMaxZ - (p.center.z + p.halfSize.z));
+            nearWall += Mathf.Clamp01(1f - gapX / cfg.contactGap);
+            nearWall += Mathf.Clamp01(1f - gapZ / cfg.contactGap);
             score += Mathf.Clamp01(nearWall);
         }
         return Clamp01(score / placed.Count);
@@ -109,9 +114,9 @@ public class RewardCalculator
     public float CogStability(IReadOnlyList<RuleChecker.PlacedItem> placed)
     {
         Vector3 cog = Cog(placed);
-        // 좌우(x)·전후(z) 중앙 수렴: |offset|/half → 0이면 1점
-        float centerX = 1f - Clamp01(TrayHalfX > 1e-6f ? Mathf.Abs(cog.x) / TrayHalfX : 0f);
-        float centerZ = 1f - Clamp01(TrayHalfZ > 1e-6f ? Mathf.Abs(cog.z) / TrayHalfZ : 0f);
+        // 좌우(x)·전후(z) 중앙 수렴: |cog-중심|/half → 중심(W/2,L/2)이면 1점
+        float centerX = 1f - Clamp01(TrayHalfX > 1e-6f ? Mathf.Abs(cog.x - TrayHalfX) / TrayHalfX : 0f);
+        float centerZ = 1f - Clamp01(TrayHalfZ > 1e-6f ? Mathf.Abs(cog.z - TrayHalfZ) / TrayHalfZ : 0f);
         // 높이(y) 낮게: 바닥(FloorTop)=1, 한도(FloorTop+HeightLimit)=0
         float h = HeightLimit > 1e-6f ? (cog.y - FloorTop) / HeightLimit : 0f;
         float lowY = 1f - Clamp01(h);

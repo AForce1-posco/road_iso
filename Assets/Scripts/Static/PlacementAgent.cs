@@ -12,7 +12,7 @@ using UnityEngine;
 /// RuleChecker로 불가 행동 마스킹, RewardCalculator로 스텝+최종 보상.
 /// 에피소드 = 랜덤 화물 목록(manifest) 하나를 다 놓거나 더 못 놓을 때까지.
 ///
-/// 좌표계: Unity 로컬 m (x=좌우 21cm, y=높이 27한도, z=주행/길이 62cm), 원점=트레이 중심, 바닥 y=floorTop.
+/// 좌표계: Unity 로컬 m (x=좌우 21cm, y=높이 27한도, z=주행/길이 62cm), 원점=트레이 rear-left 코너(모든 값 양수), 중심=W/2·L/2, 바닥 y=floorTop.
 /// 격자: cols(x) × rows(z) 셀. 셀 중심에 화물을 "떨어뜨려" 바닥/위 화물에 안착.
 /// </summary>
 [RequireComponent(typeof(BehaviorParameters))]
@@ -23,8 +23,8 @@ public class PlacementAgent : Agent
     public RewardConfig rewardConfig = new RewardConfig();
 
     [Header("격자 (x=cols, z=rows) — 2cm급 (2026-07-06, 1cm→2cm: 탐색벽 완화)")]
-    public int cols = 11;   // 좌우 21cm / 11 ≈ 1.9cm (홀수 → x=0 중앙셀 정렬)
-    public int rows = 31;   // 길이 61cm / 31 ≈ 2.0cm (홀수 → z=0 중앙셀 정렬)
+    public int cols = 11;   // 좌우 21cm / 11 ≈ 1.9cm (홀수 → 중심셀이 x=W/2 정렬)
+    public int rows = 31;   // 길이 61cm / 31 ≈ 2.0cm (홀수 → 중심셀이 z=L/2 정렬)
 
     [Header("에피소드 화물 목록 (커리큘럼 1단계: 3~5개)")]
     public int manifestMin = 3;
@@ -109,8 +109,8 @@ public class PlacementAgent : Agent
     private int placedTarget;                       // 이번 에피소드 총 배치 목표 수
     private bool setupDone;                          // Awake/Initialize 중복 방지
 
-    private float HalfX => ruleConfig.trayLateralM * 0.5f;
-    private float HalfZ => ruleConfig.trayLengthM * 0.5f;
+    private float HalfX => ruleConfig.trayLateralM * 0.5f;   // 중심 x = W/2 (균형기준, 원점 아님)
+    private float HalfZ => ruleConfig.trayLengthM * 0.5f;    // 중심 z = L/2
     private int NumCells => cols * rows;
     private int NumTypes => pool.Count;
     private int ObsSize => NumCells + 3 + 1 + 2 + NumTypes; // 높이맵 + CoG(3) + 질량(1) + CoG편차(2) + 남은목록
@@ -292,18 +292,18 @@ public class PlacementAgent : Agent
                 sensor.AddObservation(Mathf.Clamp01(h));
             }
 
-        // 2) 현재 CoG (정규화)
+        // 2) 현재 CoG 위치 (코너 원점 정규화 [0,1]: 0=좌/뒤, 1=우/앞)
         Vector3 cog = Cog();
-        sensor.AddObservation(HalfX > 1e-6f ? cog.x / HalfX : 0f);
-        sensor.AddObservation(HalfZ > 1e-6f ? cog.z / HalfZ : 0f);
+        sensor.AddObservation(ruleConfig.trayLateralM > 1e-6f ? cog.x / ruleConfig.trayLateralM : 0f);
+        sensor.AddObservation(ruleConfig.trayLengthM > 1e-6f ? cog.z / ruleConfig.trayLengthM : 0f);
         sensor.AddObservation((cog.y - ruleConfig.floorTopY) / Mathf.Max(1e-4f, ruleConfig.heightLimitM));
 
         // 3) 총질량 / payload
         sensor.AddObservation(TotalMass() / Mathf.Max(1e-4f, ruleConfig.maxPayloadKg));
 
-        // 4) CoG 편차 절대값(좌우·전후)
-        sensor.AddObservation(HalfX > 1e-6f ? Mathf.Abs(cog.x) / HalfX : 0f);
-        sensor.AddObservation(HalfZ > 1e-6f ? Mathf.Abs(cog.z) / HalfZ : 0f);
+        // 4) CoG 편차 절대값 (균형중심 W/2·L/2 기준, 0=중앙 1=끝) — 물리적 off-center 신호
+        sensor.AddObservation(HalfX > 1e-6f ? Mathf.Abs(cog.x - HalfX) / HalfX : 0f);
+        sensor.AddObservation(HalfZ > 1e-6f ? Mathf.Abs(cog.z - HalfZ) / HalfZ : 0f);
 
         // 5) 종류별 남은 수 (정규화)
         for (int i = 0; i < NumTypes; i++)
@@ -492,10 +492,10 @@ public class PlacementAgent : Agent
     }
 
     // ── 헬퍼 ────────────────────────────────────────────────────────────────
-    private Vector2 CellCenter(int c, int r)  // → (x, z) 트레이 로컬
+    private Vector2 CellCenter(int c, int r)  // → (x, z) 트레이 로컬, rear-left 코너 원점
     {
-        float x = -HalfX + (c + 0.5f) * ruleConfig.trayLateralM / cols;
-        float z = -HalfZ + (r + 0.5f) * ruleConfig.trayLengthM / rows;
+        float x = (c + 0.5f) * ruleConfig.trayLateralM / cols;
+        float z = (r + 0.5f) * ruleConfig.trayLengthM / rows;
         return new Vector2(x, z);
     }
 
