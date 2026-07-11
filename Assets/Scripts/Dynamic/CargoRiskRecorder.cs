@@ -1,11 +1,10 @@
-using System.Globalization;
 using System.IO;
 using UnityEngine;
 
 /// <summary>
-/// 주행 1회(run) 동안 위험 지표를 샘플링해 집계하고, 종료 시 results.csv에 1행을 추가한다.
+/// 주행 1회(run) 동안 위험 지표를 샘플링해 집계하고, 종료 시 위험 등급을 산출·반환한다.
 /// 측정: 차체 Roll·횡가속(g)·4륜 접지력 기반 LTR·화물 이동거리(max)·트레이 이탈 수·전복.
-/// DataLogger(시계열 로그)와 독립 — 이건 "배치 1개 = 결과 1행"용.
+/// DataLogger(시계열 로그)와 독립 — 실시간 HUD·전복감지·위험등급용.
 /// </summary>
 public class CargoRiskRecorder : MonoBehaviour
 {
@@ -29,10 +28,6 @@ public class CargoRiskRecorder : MonoBehaviour
     public float dangerLtr = 0.9f;
     [Tooltip("주의 등급 화물 이동거리 (m, 스케일 후)")]
     public float cautionShiftM = 0.15f;
-
-    [Header("출력")]
-    [Tooltip("비우면 기본 results.csv(전체 누적). 파일명만 넣으면(예: results_boxpack001.csv) Data/Results 하위 새 파일로 분리. 전체 경로도 가능.")]
-    public string resultsPath = "";        // 비우면 Assets/Data/Results/results.csv
 
     [Header("실시간 표시")]
     [Tooltip("Game 뷰 좌상단에 현재/최대값 HUD 표시")]
@@ -60,19 +55,6 @@ public class CargoRiskRecorder : MonoBehaviour
     private float totalMassKg, securedFrac;
     private Vector3 initCogLocal;      // bedAnchor 로컬 (x=좌우, z=전후, y=바닥 위 높이)
     private string sourceLayout = "";
-
-    private string ResolvedResultsPath
-    {
-        get
-        {
-            if (string.IsNullOrEmpty(resultsPath))
-                return Path.Combine(Application.dataPath, "Data/Results/results.csv");
-            // 경로 구분자 없으면 파일명만 준 것 → Data/Results 하위에 저장
-            if (!resultsPath.Contains("/") && !resultsPath.Contains("\\"))
-                return Path.Combine(Application.dataPath, "Data/Results", resultsPath);
-            return resultsPath;   // 전체/상대 경로면 그대로
-        }
-    }
 
     void Awake()
     {
@@ -219,12 +201,11 @@ public class CargoRiskRecorder : MonoBehaviour
         }
     }
 
-    /// <summary>주행 종료 시 호출. 집계 → results.csv 1행 append. 위험등급 반환.</summary>
+    /// <summary>주행 종료 시 호출. 집계 → 위험등급 산출·반환.</summary>
     public int Finish()
     {
         Recording = false;
         int grade = ComputeGrade();
-        WriteCsvRow(grade);
         Debug.Log($"기록 종료 ({Time.time - startTime:F1}s): roll {maxAbsRollDeg:F1}° / latG {maxLatAccelG:F2} / " +
                   $"LTR {maxAbsLtr:F2} / 이동 {maxShiftM:F2}m / 이탈 {fellCount} / 전복 {(RolloverDetected ? 1 : 0)} → 등급 {grade}");
         return grade;
@@ -236,38 +217,6 @@ public class CargoRiskRecorder : MonoBehaviour
         if (fellCount > 0 || maxAbsRollDeg >= dangerRollDeg || maxAbsLtr >= dangerLtr) return 2;
         if (maxAbsRollDeg >= cautionRollDeg || maxAbsLtr >= cautionLtr || maxShiftM >= cautionShiftM) return 1;
         return 0;
-    }
-
-    private void WriteCsvRow(int grade)
-    {
-        var ci = CultureInfo.InvariantCulture;
-        string path = ResolvedResultsPath;
-        Directory.CreateDirectory(Path.GetDirectoryName(path));
-
-        if (!File.Exists(path))
-        {
-            File.WriteAllText(path,
-                "run_id,source_layout,cargo_count,total_mass_kg,secured_frac," +
-                "init_cog_x,init_cog_z,init_cog_height," +
-                "target_speed_kmh,duration_s," +
-                "max_roll_deg,max_pitch_deg,max_lat_accel_g,max_abs_ltr," +
-                "max_cargo_shift_m,cargo_fell_count,rollover,risk_grade\n");
-        }
-
-        string runId = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        float targetSpeed = pursuit != null ? pursuit.isoTargetSpeedKmh : 0f;
-        string row = string.Join(",",
-            runId, sourceLayout,
-            cargoCount.ToString(ci), totalMassKg.ToString("F1", ci), securedFrac.ToString("F2", ci),
-            initCogLocal.x.ToString("F3", ci), initCogLocal.z.ToString("F3", ci), initCogLocal.y.ToString("F3", ci),
-            targetSpeed.ToString("F0", ci), (Time.time - startTime).ToString("F1", ci),
-            maxAbsRollDeg.ToString("F2", ci), maxAbsPitchDeg.ToString("F2", ci),
-            maxLatAccelG.ToString("F3", ci), maxAbsLtr.ToString("F3", ci),
-            maxShiftM.ToString("F3", ci), fellCount.ToString(ci),
-            (RolloverDetected ? 1 : 0).ToString(ci), grade.ToString(ci));
-
-        File.AppendAllText(path, row + "\n");
-        Debug.Log($"results.csv 1행 추가: {path}");
     }
 
     private static float NormalizeAngle(float a) => a > 180f ? a - 360f : a;
