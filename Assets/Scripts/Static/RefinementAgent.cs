@@ -36,6 +36,16 @@ public class RefinementAgent : Agent
     [Tooltip("Dense=공간 위주(개선여지 큼) / Stable=이미 안전")]
     public BinPacker.PackMode startPackMode = BinPacker.PackMode.Dense;
 
+    [Header("케이스 커리큘럼 (1개→N개)")]
+    [Tooltip("각 항목 = 한 케이스의 manifest CSV(Assets 기준 상대경로, 예: Data/refine_case1.csv). " +
+             "비우면 위 startManifest 1개만 사용. 채우면 에피소드마다 랜덤으로 한 케이스 선택 → 커리큘럼. " +
+             "1단계=1개, 2단계=5개 넣으면 됨.")]
+    public string[] caseCsvPaths = new string[0];
+    [Tooltip("커리큘럼 전이(--initialize-from)용: 행동공간(아이템 수)을 이 값으로 고정. 0=자동(케이스 최대). " +
+             "커리큘럼이면 단계마다 케이스가 달라도 action space가 같아야 전이가 되므로, " +
+             "전체 단계에서 쓸 케이스들의 최대 아이템 수(예: 18)로 모든 단계에 동일하게 설정.")]
+    public int maxItemsOverride = 0;
+
     [Header("에피소드")]
     [Tooltip("한 에피소드에 허용하는 재배치 수")]
     public int stepsPerEpisode = 25;
@@ -70,7 +80,9 @@ public class RefinementAgent : Agent
     private RuleChecker rules;
     private RewardCalculator reward;
     private BinPacker packer;
-    private List<CargoType> manifestList;                                   // 시작 배치용
+    private List<CargoType> manifestList;                                   // 이번 에피소드 케이스의 manifest
+    private List<List<CargoType>> caseSet;                                  // 케이스 커리큘럼(1개 이상)
+    private int curCaseIdx;                                                 // 이번 에피소드 케이스 index
     private readonly List<RuleChecker.PlacedItem> placed = new List<RuleChecker.PlacedItem>();
     private int numItems;
     private int stepCount;
@@ -104,27 +116,58 @@ public class RefinementAgent : Agent
         packer = new BinPacker(ruleConfig, rewardConfig, cols, rows) { mode = startPackMode };
         if (useSurrogateReward) riskModel = new LayoutRiskModel(surrogateResourceName);
 
-        manifestList = CargoManifest.Resolve(startManifest, "", out _);
-        numItems = Mathf.Max(1, manifestList.Count);
+        // 케이스 세트 구성: CSV 경로들이 있으면 각 CSV = 한 케이스, 없으면 startManifest 1개.
+        caseSet = new List<List<CargoType>>();
+        if (caseCsvPaths != null && caseCsvPaths.Length > 0)
+        {
+            foreach (var csv in caseCsvPaths)
+            {
+                if (string.IsNullOrWhiteSpace(csv)) continue;
+                var m = CargoManifest.Resolve(null, csv, out string src);
+                if (m != null && m.Count > 0) { caseSet.Add(m); Debug.Log($"[Refine] 케이스 로드 {src}: {m.Count}개"); }
+                else Debug.LogWarning($"[Refine] 케이스 CSV 비었음/실패: {csv}");
+            }
+        }
+        if (caseSet.Count == 0)   // fallback: 단일 케이스(인스펙터 manifest)
+            caseSet.Add(CargoManifest.Resolve(startManifest, "", out _));
 
-        // 경계 마스킹용: 회전 포함, 가장 작은 화물의 최소 반치수. 이보다 좁게 남은 가장자리 셀은
+        // action branch0(아이템): 케이스 중 최대 아이템 수. 적은 케이스의 남는 인덱스는 no-op 처리+마스킹.
+        // 커리큘럼 전이 시엔 maxItemsOverride로 고정(단계마다 action space 동일해야 --initialize-from 됨).
+        int autoMax = 1;
+        foreach (var m in caseSet) autoMax = Mathf.Max(autoMax, m.Count);
+        if (maxItemsOverride > 0)
+        {
+            numItems = maxItemsOverride;
+            if (maxItemsOverride < autoMax)
+                Debug.LogWarning($"[Refine] maxItemsOverride({maxItemsOverride}) < 케이스 최대 아이템({autoMax}) → 초과 아이템 선택 불가. override를 {autoMax} 이상으로 설정하세요.");
+        }
+        else numItems = autoMax;
+
+        // 경계 마스킹용: 모든 케이스 중 가장 작은 화물의 최소 반치수. 이보다 좁게 남은 가장자리 셀은
         // 어떤 화물 중심을 놓아도 트레이를 벗어나므로 미리 막는다.
         minHalfXZ = float.MaxValue;
-        foreach (var t in manifestList)
-            minHalfXZ = Mathf.Min(minHalfXZ, Mathf.Min(t.sizeM.x, t.sizeM.z) * 0.5f);
+        foreach (var m in caseSet)
+            foreach (var t in m)
+                minHalfXZ = Mathf.Min(minHalfXZ, Mathf.Min(t.sizeM.x, t.sizeM.z) * 0.5f);
         if (minHalfXZ == float.MaxValue) minHalfXZ = 0f;
+
+        manifestList = caseSet[0];   // 초기값(OnEpisodeBegin에서 매번 재선택)
 
         var bp = GetComponent<BehaviorParameters>();
         bp.BrainParameters.VectorObservationSize = ObsSize;
         bp.BrainParameters.ActionSpec = ActionSpec.MakeDiscrete(numItems, NumCells, 2); // 아이템·셀·회전
         if (MaxStep == 0) MaxStep = stepsPerEpisode + 2;
 
-        Debug.Log($"[RefinementAgent] obs={ObsSize}, action=({numItems},{NumCells},2), 시작화물={numItems}개, mode={startPackMode}");
+        Debug.Log($"[RefinementAgent] obs={ObsSize}, action=({numItems},{NumCells},2), 케이스={caseSet.Count}개, 최대화물={numItems}개, mode={startPackMode}");
     }
 
     public override void OnEpisodeBegin()
     {
-        // 빈패커로 시작 배치 생성 (결정론적 → 매 에피소드 동일 = boxpack001)
+        // 케이스 커리큘럼: 매 에피소드 케이스 하나 랜덤 선택 (1개면 항상 그것).
+        curCaseIdx = caseSet.Count > 1 ? Random.Range(0, caseSet.Count) : 0;
+        manifestList = caseSet[curCaseIdx];
+
+        // 빈패커로 선택 케이스 시작 배치 생성 (케이스별 결정론적 Dense pack)
         var unplaced = new List<CargoType>();
         var packed = packer.Pack(manifestList, unplaced);
         placed.Clear();
@@ -173,10 +216,13 @@ public class RefinementAgent : Agent
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask mask)
     {
-        // branch0(아이템)·branch2(회전)은 마스킹 불가:
-        //  - 아이템 16개는 전부 실재 → 다 유효 후보.
-        //  - 회전은 어떤 아이템을 고를지에 의존 → 조합 마스킹 불가(ML-Agents는 브랜치별 독립 마스킹).
-        // branch1(셀)만 막는다. 브랜치 독립 마스킹이라 겹침(아이템·회전 조합 의존)은 못 막고,
+        // branch0(아이템): 케이스마다 아이템 수가 달라 numItems(=최대)보다 적을 수 있음.
+        //   실재하지 않는 인덱스(placed.Count 이상)를 막아 무의미한 no-op 스텝을 줄인다.
+        for (int i = placed.Count; i < numItems; i++)
+            mask.SetActionEnabled(0, i, false);
+
+        // branch2(회전)은 마스킹 불가(어떤 아이템을 고를지에 의존 → 조합 마스킹 불가, ML-Agents는 브랜치별 독립).
+        // branch1(셀)은 아래에서 막는다. 브랜치 독립 마스킹이라 겹침(아이템·회전 조합 의존)은 못 막고,
         // "어떤 화물도 못 놓는 셀"만 근사로 제거한다.
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < cols; c++)
@@ -217,6 +263,12 @@ public class RefinementAgent : Agent
             stats.Add("Refine/ValidMoveRate", validMoves / (float)stepsPerEpisode);
             stats.Add("Refine/FinalImprovement", prevFinal - startFinal);
             stats.Add("Refine/FinalAbsolute", prevFinal);
+            // 케이스별 개선량·유효이동률 — 어느 케이스에서 붕괴(개선 실패)하는지 추적 (커리큘럼 검증)
+            if (caseSet.Count > 1)
+            {
+                stats.Add($"RefineCase/Improve_{curCaseIdx}", prevFinal - startFinal);
+                stats.Add($"RefineCase/ValidRate_{curCaseIdx}", validMoves / (float)stepsPerEpisode);
+            }
             if (verboseLog) Debug.Log($"[Refine 종료] Final={prevFinal:F3} (시작 {startFinal:F3}, Δ{prevFinal - startFinal:+0.000;-0.000}), 유효 {validMoves}/{stepsPerEpisode}");
             if (saveLayoutOnComplete) SaveLayout();
             EndEpisode();

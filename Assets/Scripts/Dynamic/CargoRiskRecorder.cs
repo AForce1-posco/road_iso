@@ -1,11 +1,11 @@
-using System.Globalization;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
 /// <summary>
-/// 주행 1회(run) 동안 위험 지표를 샘플링해 집계하고, 종료 시 results.csv에 1행을 추가한다.
+/// 주행 1회(run) 동안 위험 지표를 샘플링해 집계하고, 종료 시 위험 등급을 산출·반환한다.
 /// 측정: 차체 Roll·횡가속(g)·4륜 접지력 기반 LTR·화물 이동거리(max)·트레이 이탈 수·전복.
-/// DataLogger(시계열 로그)와 독립 — 이건 "배치 1개 = 결과 1행"용.
+/// DataLogger(시계열 로그)와 독립 — 실시간 HUD·전복감지·위험등급용.
 /// </summary>
 public class CargoRiskRecorder : MonoBehaviour
 {
@@ -22,17 +22,11 @@ public class CargoRiskRecorder : MonoBehaviour
     [Tooltip("이탈 판정: 트레이 바닥보다 이만큼 아래로 내려가면 낙하 (m)")]
     public float fallBelowM = 0.3f;
 
-    [Header("위험 등급 임계 (0안전/1주의/2위험/3전복)")]
-    public float cautionRollDeg = 6f;
-    public float dangerRollDeg = 12f;
-    public float cautionLtr = 0.6f;
-    public float dangerLtr = 0.9f;
-    [Tooltip("주의 등급 화물 이동거리 (m, 스케일 후)")]
-    public float cautionShiftM = 0.15f;
-
-    [Header("출력")]
-    [Tooltip("비우면 기본 results.csv(전체 누적). 파일명만 넣으면(예: results_boxpack001.csv) Data/Results 하위 새 파일로 분리. 전체 경로도 가능.")]
-    public string resultsPath = "";        // 비우면 Assets/Data/Results/results.csv
+    [Header("위험 등급 (surrogate와 동일: p95LTR 밴드)")]
+    [Tooltip("grade: p95LTR < cut1=0안전 / <cut2=1주의 / <cut3=2위험 / ≥cut3=3고위험. layout_risk_p95 분포(사분위 0.47/0.50/0.53) 기준. 차량/트랙 바뀌면 재보정.")]
+    public float p95Cut1 = 0.47f;
+    public float p95Cut2 = 0.50f;
+    public float p95Cut3 = 0.53f;
 
     [Header("실시간 표시")]
     [Tooltip("Game 뷰 좌상단에 현재/최대값 HUD 표시")]
@@ -47,6 +41,12 @@ public class CargoRiskRecorder : MonoBehaviour
     private float curSpeedKmh, curRollDeg, curLatG, curLtr;
     private float lastConsoleLog;
 
+    // p95LTR 집계 (surrogate reward와 동일 지표) — FixedUpdate마다 |LTR| 버퍼 → Finish에서 p95 계산
+    private readonly List<float> ltrAbsSamples = new List<float>(4096);
+    private float p95Ltr;              // 이번 run의 실측 p95(|LTR|) = surrogate가 예측하려는 그 값
+    private int lastGrade = -1;
+    private string lastSummary = "";   // 주행 종료 후 HUD에 계속 표시할 요약
+
     // ── 집계값 ──
     private float maxAbsRollDeg, maxAbsPitchDeg, maxLatAccelG, maxAbsLtr, maxShiftM;
     private int fellCount;
@@ -60,19 +60,6 @@ public class CargoRiskRecorder : MonoBehaviour
     private float totalMassKg, securedFrac;
     private Vector3 initCogLocal;      // bedAnchor 로컬 (x=좌우, z=전후, y=바닥 위 높이)
     private string sourceLayout = "";
-
-    private string ResolvedResultsPath
-    {
-        get
-        {
-            if (string.IsNullOrEmpty(resultsPath))
-                return Path.Combine(Application.dataPath, "Data/Results/results.csv");
-            // 경로 구분자 없으면 파일명만 준 것 → Data/Results 하위에 저장
-            if (!resultsPath.Contains("/") && !resultsPath.Contains("\\"))
-                return Path.Combine(Application.dataPath, "Data/Results", resultsPath);
-            return resultsPath;   // 전체/상대 경로면 그대로
-        }
-    }
 
     void Awake()
     {
@@ -108,6 +95,8 @@ public class CargoRiskRecorder : MonoBehaviour
         maxAbsRollDeg = maxAbsPitchDeg = maxLatAccelG = maxAbsLtr = maxShiftM = 0f;
         fellCount = 0;
         RolloverDetected = false;
+        ltrAbsSamples.Clear();
+        p95Ltr = 0f; lastSummary = "";
         lastVelocity = truckBody.velocity;
         startTime = Time.time;
         Recording = true;
@@ -134,6 +123,7 @@ public class CargoRiskRecorder : MonoBehaviour
         // 4륜 접지력 → LTR. 뜬 바퀴는 힘 0 → |LTR|이 1로 접근
         float ltr = ComputeWheelLtr();
         if (Mathf.Abs(ltr) > maxAbsLtr) maxAbsLtr = Mathf.Abs(ltr);
+        ltrAbsSamples.Add(Mathf.Abs(ltr));   // p95 계산용 (surrogate 지표와 동일)
 
         SampleCargo();
 
@@ -158,18 +148,29 @@ public class CargoRiskRecorder : MonoBehaviour
 
     void OnGUI()
     {
-        if (!showHud || !Recording) return;
-        string iso = pursuit != null && pursuit.UsingISO ? "  [ISO 구간]" : "";
-        string txt =
-            $" t {Time.time - startTime:F1}s   속도 {curSpeedKmh:F0} km/h{iso}\n" +
-            $" Roll  {curRollDeg,6:F1}°   (max {maxAbsRollDeg:F1}°)\n" +
-            $" 횡가속 {curLatG,5:F2} g  (max {maxLatAccelG:F2} g)\n" +
-            $" LTR   {curLtr,6:F2}   (max {maxAbsLtr:F2})\n" +
-            $" 화물이동 max {maxShiftM:F2} m   이탈 {fellCount}개" +
-            (RolloverDetected ? "\n ★ 전복 감지 ★" : "");
-        int h = RolloverDetected ? 126 : 108;
-        GUI.Box(new Rect(10, 10, 280, h), "");
-        GUI.Label(new Rect(18, 16, 268, h - 8), txt);
+        if (!showHud) return;
+
+        if (Recording)
+        {
+            string iso = pursuit != null && pursuit.UsingISO ? "  [ISO 구간]" : "";
+            string txt =
+                $" t {Time.time - startTime:F1}s   속도 {curSpeedKmh:F0} km/h{iso}\n" +
+                $" 현재위험 {Mathf.Abs(curLtr) * 100f,3:F0}/100  ({Mathf.Abs(curLtr):F3})\n" +
+                $" Roll  {curRollDeg,6:F1}°   (max {maxAbsRollDeg:F1}°)\n" +
+                $" 횡가속 {curLatG,5:F2} g  (max {maxLatAccelG:F2} g)\n" +
+                $" LTR   {curLtr,6:F2}   (max {maxAbsLtr:F2})\n" +
+                $" 화물이동 max {maxShiftM:F2} m   이탈 {fellCount}개" +
+                (RolloverDetected ? "\n ★ 전복 감지 ★" : "");
+            int h = RolloverDetected ? 140 : 122;
+            GUI.Box(new Rect(10, 10, 280, h), "");
+            GUI.Label(new Rect(18, 16, 268, h - 8), txt);
+        }
+        else if (!string.IsNullOrEmpty(lastSummary))
+        {
+            // 주행 종료 후: 최종 위험도(p95LTR) + 등급 계속 표시
+            GUI.Box(new Rect(10, 10, 280, 92), "");
+            GUI.Label(new Rect(18, 16, 268, 84), lastSummary);
+        }
     }
 
     private float ComputeWheelLtr()
@@ -219,55 +220,44 @@ public class CargoRiskRecorder : MonoBehaviour
         }
     }
 
-    /// <summary>주행 종료 시 호출. 집계 → results.csv 1행 append. 위험등급 반환.</summary>
+    /// <summary>주행 종료 시 호출. 실측 p95LTR·등급 산출 → HUD/콘솔 표시. 등급 반환.</summary>
     public int Finish()
     {
         Recording = false;
+        p95Ltr = Percentile(ltrAbsSamples, 95f);   // 실측 p95(|LTR|) = surrogate가 예측하려는 값
         int grade = ComputeGrade();
-        WriteCsvRow(grade);
-        Debug.Log($"기록 종료 ({Time.time - startTime:F1}s): roll {maxAbsRollDeg:F1}° / latG {maxLatAccelG:F2} / " +
-                  $"LTR {maxAbsLtr:F2} / 이동 {maxShiftM:F2}m / 이탈 {fellCount} / 전복 {(RolloverDetected ? 1 : 0)} → 등급 {grade}");
+        lastGrade = grade;
+        lastSummary =
+            $" ▣ 주행 종료 위험도\n" +
+            $" p95LTR  {p95Ltr * 100f:F0}/100  ({p95Ltr:F3})\n" +
+            $" 등급  {grade}  {GradeName(grade)}\n" +
+            $" maxLTR {maxAbsLtr:F2}  maxRoll {maxAbsRollDeg:F1}°  이탈 {fellCount}";
+        Debug.Log($"기록 종료 ({Time.time - startTime:F1}s): " +
+                  $"위험도 p95LTR={p95Ltr:F4} ({p95Ltr * 100f:F0}/100) 등급={grade}({GradeName(grade)}) | " +
+                  $"maxLTR={maxAbsLtr:F2} maxRoll={maxAbsRollDeg:F1}° 이동={maxShiftM:F2}m 이탈={fellCount} 전복={(RolloverDetected ? 1 : 0)}");
         return grade;
     }
 
+    /// <summary>등급 = surrogate와 동일한 p95LTR 밴드. (전복 발생 시엔 무조건 3)</summary>
     private int ComputeGrade()
     {
-        if (RolloverDetected) return 3;
-        if (fellCount > 0 || maxAbsRollDeg >= dangerRollDeg || maxAbsLtr >= dangerLtr) return 2;
-        if (maxAbsRollDeg >= cautionRollDeg || maxAbsLtr >= cautionLtr || maxShiftM >= cautionShiftM) return 1;
+        if (RolloverDetected || p95Ltr >= p95Cut3) return 3;
+        if (p95Ltr >= p95Cut2) return 2;
+        if (p95Ltr >= p95Cut1) return 1;
         return 0;
     }
 
-    private void WriteCsvRow(int grade)
+    private static string GradeName(int g) => g switch { 3 => "고위험", 2 => "위험", 1 => "주의", _ => "안전" };
+
+    /// <summary>선형보간 백분위 (np.percentile 기본과 동일) — 라벨 계산식과 일치.</summary>
+    private static float Percentile(List<float> v, float pct)
     {
-        var ci = CultureInfo.InvariantCulture;
-        string path = ResolvedResultsPath;
-        Directory.CreateDirectory(Path.GetDirectoryName(path));
-
-        if (!File.Exists(path))
-        {
-            File.WriteAllText(path,
-                "run_id,source_layout,cargo_count,total_mass_kg,secured_frac," +
-                "init_cog_x,init_cog_z,init_cog_height," +
-                "target_speed_kmh,duration_s," +
-                "max_roll_deg,max_pitch_deg,max_lat_accel_g,max_abs_ltr," +
-                "max_cargo_shift_m,cargo_fell_count,rollover,risk_grade\n");
-        }
-
-        string runId = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        float targetSpeed = pursuit != null ? pursuit.isoTargetSpeedKmh : 0f;
-        string row = string.Join(",",
-            runId, sourceLayout,
-            cargoCount.ToString(ci), totalMassKg.ToString("F1", ci), securedFrac.ToString("F2", ci),
-            initCogLocal.x.ToString("F3", ci), initCogLocal.z.ToString("F3", ci), initCogLocal.y.ToString("F3", ci),
-            targetSpeed.ToString("F0", ci), (Time.time - startTime).ToString("F1", ci),
-            maxAbsRollDeg.ToString("F2", ci), maxAbsPitchDeg.ToString("F2", ci),
-            maxLatAccelG.ToString("F3", ci), maxAbsLtr.ToString("F3", ci),
-            maxShiftM.ToString("F3", ci), fellCount.ToString(ci),
-            (RolloverDetected ? 1 : 0).ToString(ci), grade.ToString(ci));
-
-        File.AppendAllText(path, row + "\n");
-        Debug.Log($"results.csv 1행 추가: {path}");
+        if (v.Count == 0) return 0f;
+        var a = v.ToArray();
+        System.Array.Sort(a);
+        float idx = (pct / 100f) * (a.Length - 1);
+        int lo = Mathf.FloorToInt(idx), hi = Mathf.CeilToInt(idx);
+        return lo == hi ? a[lo] : Mathf.Lerp(a[lo], a[hi], idx - lo);
     }
 
     private static float NormalizeAngle(float a) => a > 180f ? a - 360f : a;

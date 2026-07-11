@@ -18,10 +18,11 @@ public class DataLogger : MonoBehaviour
     [Header("Logging")]
     public float interval = 0.1f;
     public string fileName = "vehicle_dynamics_v3.csv";
-    [Tooltip("모든 Play가 이 한 파일에 계속 append됨 (Assets/Data/Results). 각 행의 RunID로 실행 구분, LayoutID로 케이스 구분. ※ combinedChunkCases>0이면 이 이름 대신 청크 파일로 저장")]
-    public string combinedFileName = "combined_timeseries_all.csv";
-    [Tooltip("통합 시계열을 N 케이스마다 새 파일로 분할 (100만 줄 방지). 0=분할 안 함(한 파일). 예: 50 → combined_timeseries_001-050.csv, 051-100.csv …")]
-    public int combinedChunkCases = 50;
+    [Tooltip("통합 시계열 파일명(확장자 제외). 비우면 자동: combined_<오늘날짜>_<번호>. 지정하면 <이름>_<번호>. " +
+             "매 Play(배치)마다 기존 최대번호+1로 새 파일 → 재실행이 옛 파일에 섞이지 않음.")]
+    public string combinedFileName = "";
+    [Tooltip("한 파일당 최대 행 수. 초과하면 케이스 경계에서 다음 번호 파일로 롤오버(파일이 너무 커 안 열리는 것 방지). 0=롤오버 없음(한 파일).")]
+    public int maxRowsPerFile = 250000;
     public bool logToConsole = false;
     public int flushEveryRows = 50;
 
@@ -51,7 +52,9 @@ public class DataLogger : MonoBehaviour
     private Rigidbody rb;
     private StreamWriter writer;         // 케이스별 파일
     private StreamWriter combinedWriter; // 배치 통합 파일 (또는 현재 청크)
-    private int runIndexInBatch;         // 배치 내 케이스 순번(1..) — 청크 롤오버용
+    private string combinedBase;         // 통합 파일 기본이름 (combined_<날짜> 또는 지정명)
+    private int combinedPart;            // 현재 파트 번호 (_0001, _0002 …)
+    private int rowsInCurrentFile;       // 현재 통합 파일에 쓴 행 수 (25만 행 롤오버용)
     private bool recording;              // BeginRun~EndRun 사이에만 true
 
     private float logTimer;
@@ -75,6 +78,9 @@ public class DataLogger : MonoBehaviour
     private float curTotalMassKg;
     private float curSecuredFrac;
 
+    // 배치(레이아웃) 피처 — surrogate 9피처와 동일(1:10 mockup 공간). BeginRun에서 화물로더로부터 계산, 케이스 내내 상수.
+    private float curCogX, curCogY, curCogZ, curMaxHeightM, curIxx, curIyy, curIzz;
+
     private static readonly CultureInfo CsvCulture = CultureInfo.InvariantCulture;
 
     // 케이스별·통합 파일 공통 헤더. origin/main 컬럼 전부 유지 + Cargo* 3개 추가(조건 블록 뒤).
@@ -82,6 +88,7 @@ public class DataLogger : MonoBehaviour
         "DatasetVersion,LayoutID,RunID,ScenarioID,SampleIndex,RunTime,UnityTime," +
         "TargetSpeedKmh,FrictionCondition,RoadCondition,RoadBankAngleDeg,RoadSlopeDeg,VehicleBaseMassKg," +
         "CargoCount,TotalMassKg,SecuredFrac," +
+        "CogX,CogY,CogZ,MaxHeightM,InertiaXX,InertiaYY,InertiaZZ," +
         "PosX,PosY,PosZ,VelX,VelY,VelZ,SpeedKmh," +
         "AccX,AccY,AccZ,LongAcc,LatAcc,VertAcc," +
         "Roll,Pitch,Yaw,RollRate,PitchRate,YawRate," +
@@ -106,16 +113,39 @@ public class DataLogger : MonoBehaviour
         // 파일 열기는 BeginBatch/BeginRun에서 (recording 게이트 방식) — Start에선 초기화만.
     }
 
-    // ── 배치 통합 파일 (전체 케이스 한 파일) ─────────────────────────────────
-    /// <summary>배치 시작: Assets/Data/Results/combined_timeseries_&lt;runId&gt;.csv 열기. runId는 RunID 컬럼에도 반영.</summary>
+    // ── 배치 통합 파일 (행수 롤오버 + 날짜/번호 이름) ────────────────────────
+    /// <summary>배치 시작: 통합 파일 기본이름·파트번호 결정 후 첫 파일 열기.
+    /// 이름 = (지정명 or combined_&lt;오늘날짜&gt;)_&lt;번호&gt;.csv. 번호는 기존 파일 max+1 → 재실행이 옛 파일에 안 섞임.</summary>
     public void BeginBatch(string runId)
     {
         if (!string.IsNullOrEmpty(runId)) runID = runId;
         CargoPaths.EnsureAll();
-        runIndexInBatch = 0;
-        // 분할 OFF(0) → 지금 한 파일 염. 분할 ON → 첫 케이스(BeginRun)에서 청크 파일 염.
-        if (combinedChunkCases <= 0)
-            OpenCombined(combinedFileName);
+        combinedBase = string.IsNullOrWhiteSpace(combinedFileName)
+            ? $"combined_{DateTime.Now.ToString("yyyyMMdd", CsvCulture)}"
+            : Path.GetFileNameWithoutExtension(combinedFileName.Trim());
+        combinedPart = NextPartNumber(combinedBase);
+        rowsInCurrentFile = 0;
+        OpenCombined(CombinedFileNameForPart(combinedPart));
+    }
+
+    private string CombinedFileNameForPart(int part) => $"{combinedBase}_{part:D4}.csv";
+
+    /// <summary>Results 폴더에서 &lt;base&gt;_NNNN.csv 를 스캔해 max 번호+1 반환(없으면 1).</summary>
+    private int NextPartNumber(string baseName)
+    {
+        int mx = 0;
+        try
+        {
+            foreach (var f in Directory.GetFiles(CargoPaths.ResultsDir, baseName + "_*.csv"))
+            {
+                string stem = Path.GetFileNameWithoutExtension(f);
+                if (stem.Length > baseName.Length + 1 &&
+                    int.TryParse(stem.Substring(baseName.Length + 1), out int n))
+                    mx = Mathf.Max(mx, n);
+            }
+        }
+        catch { }
+        return mx + 1;
     }
 
     /// <summary>통합/청크 파일 하나 열기. append 모드, 새 파일이면 헤더 1줄.</summary>
@@ -150,20 +180,20 @@ public class DataLogger : MonoBehaviour
     /// <summary>케이스 주행 시작: LayoutID=케이스명, 화물 메타 세팅, 케이스별 파일 열고 샘플링 시작.</summary>
     public void BeginRun(string caseName, int cargoCount, float totalMassKg, float securedFrac)
     {
-        // 통합 파일 분할: 배치 내 케이스 순번 기준 N개마다 새 청크 파일로 롤오버
-        runIndexInBatch++;
-        if (combinedChunkCases > 0 && (runIndexInBatch - 1) % combinedChunkCases == 0)
+        // 통합 파일 롤오버: 현재 파일이 25만 행(maxRowsPerFile) 넘으면 케이스 경계에서 다음 번호로
+        if (maxRowsPerFile > 0 && rowsInCurrentFile >= maxRowsPerFile)
         {
             if (combinedWriter != null) { combinedWriter.Flush(); combinedWriter.Close(); combinedWriter = null; }
-            int start = runIndexInBatch;
-            int end = start + combinedChunkCases - 1;
-            OpenCombined($"combined_timeseries_{start:D3}-{end:D3}.csv");
+            combinedPart++;
+            rowsInCurrentFile = 0;
+            OpenCombined(CombinedFileNameForPart(combinedPart));
         }
 
         if (!string.IsNullOrEmpty(caseName)) layoutID = caseName;
         curCargoCount = cargoCount;
         curTotalMassKg = totalMassKg;
         curSecuredFrac = securedFrac;
+        ComputeLayoutFeatures();   // CoG·최고높이·관성모멘트 (surrogate와 동일, mockup 공간)
 
         // 케이스별 상태 리셋 (각 케이스가 SampleIndex 0 · RunTime 0에서 시작)
         sampleIndex = 0;
@@ -301,6 +331,7 @@ public class DataLogger : MonoBehaviour
             F(targetSpeedKmh), EscapeCsv(frictionCondition), EscapeCsv(roadCondition),
             F(roadBankAngleDeg), F(roadSlopeDeg), F(vehicleBaseMassKg),
             curCargoCount.ToString(CsvCulture), F(curTotalMassKg), F(curSecuredFrac),
+            F(curCogX), F(curCogY), F(curCogZ), F(curMaxHeightM), F(curIxx), F(curIyy), F(curIzz),
             F(pos.x), F(pos.y), F(pos.z),
             F(vel.x), F(vel.y), F(vel.z), F(speedKmh),
             F(acc.x), F(acc.y), F(acc.z),
@@ -322,7 +353,7 @@ public class DataLogger : MonoBehaviour
             F(legacyRisk), isRollover.ToString(CsvCulture));
 
         if (writer != null) writer.WriteLine(line);
-        if (combinedWriter != null) combinedWriter.WriteLine(line);
+        if (combinedWriter != null) { combinedWriter.WriteLine(line); rowsInCurrentFile++; }
 
         sampleIndex++;
         rowsSinceFlush++;
@@ -339,6 +370,52 @@ public class DataLogger : MonoBehaviour
         lastEuler = euler;
         lastAngularVelocity = angVel;
         lastLogTime = currentTime;
+    }
+
+    /// <summary>
+    /// 화물로더에서 배치(레이아웃) 피처를 계산 — RefinementAgent.BuildRiskFeatures(9피처)와 동일 공식·공간(1:10 mockup).
+    /// mockup 위치 = initialLocal / loader.scale, 크기 = type.sizeM(회전 반영), 관성은 raw massKg(평행축).
+    /// CargoCount/TotalMassKg는 기존 컬럼(TotalMassKg=raw×massScale=surrogate와 동일). 여기선 CoG·MaxHeight·Inertia만.
+    /// </summary>
+    private void ComputeLayoutFeatures()
+    {
+        curCogX = curCogY = curCogZ = curMaxHeightM = curIxx = curIyy = curIzz = 0f;
+        if (cargoLoader == null || cargoLoader.Loaded == null || cargoLoader.Loaded.Count == 0) return;
+        float sc = Mathf.Max(1e-6f, cargoLoader.scale);
+
+        // 1패스: CoG (mockup, raw mass 가중)
+        float M = 0f; Vector3 cog = Vector3.zero;
+        foreach (var c in cargoLoader.Loaded)
+        {
+            if (c.type == null || c.go == null) continue;
+            float m = c.type.massKg;
+            M += m; cog += m * (c.initialLocal / sc);
+        }
+        if (M <= 1e-6f) return;
+        cog /= M;
+
+        // 2패스: 관성모멘트(평행축) + 최고높이
+        float ixx = 0f, iyy = 0f, izz = 0f, maxTop = 0.01f;   // 0.01 = RuleConfig.floorTopY 근사
+        foreach (var c in cargoLoader.Loaded)
+        {
+            if (c.type == null || c.go == null) continue;
+            Vector3 pos = c.initialLocal / sc;
+            Vector3 s = c.type.sizeM;
+            float ey = c.go.transform.localEulerAngles.y;
+            bool rot = Mathf.Abs(Mathf.DeltaAngle(ey, 90f)) < 1f || Mathf.Abs(Mathf.DeltaAngle(ey, 270f)) < 1f;
+            float Dx = rot ? s.z : s.x, Dy = s.y, Dz = rot ? s.x : s.z;
+            float m = c.type.massKg;
+            float ibx = m / 12f * (Dy * Dy + Dz * Dz);
+            float iby = m / 12f * (Dx * Dx + Dz * Dz);
+            float ibz = m / 12f * (Dx * Dx + Dy * Dy);
+            Vector3 off = pos - cog;
+            ixx += ibx + m * (off.y * off.y + off.z * off.z);
+            iyy += iby + m * (off.x * off.x + off.z * off.z);
+            izz += ibz + m * (off.x * off.x + off.y * off.y);
+            maxTop = Mathf.Max(maxTop, pos.y + Dy * 0.5f);
+        }
+        curCogX = cog.x; curCogY = cog.y; curCogZ = cog.z;
+        curMaxHeightM = maxTop; curIxx = ixx; curIyy = iyy; curIzz = izz;
     }
 
     WheelData GetWheelData(WheelCollider wheel)
