@@ -41,6 +41,10 @@ public class RefinementAgent : Agent
              "비우면 위 startManifest 1개만 사용. 채우면 에피소드마다 랜덤으로 한 케이스 선택 → 커리큘럼. " +
              "1단계=1개, 2단계=5개 넣으면 됨.")]
     public string[] caseCsvPaths = new string[0];
+    [Tooltip("커리큘럼 전이(--initialize-from)용: 행동공간(아이템 수)을 이 값으로 고정. 0=자동(케이스 최대). " +
+             "커리큘럼이면 단계마다 케이스가 달라도 action space가 같아야 전이가 되므로, " +
+             "전체 단계에서 쓸 케이스들의 최대 아이템 수(예: 18)로 모든 단계에 동일하게 설정.")]
+    public int maxItemsOverride = 0;
 
     [Header("에피소드")]
     [Tooltip("한 에피소드에 허용하는 재배치 수")]
@@ -127,9 +131,17 @@ public class RefinementAgent : Agent
         if (caseSet.Count == 0)   // fallback: 단일 케이스(인스펙터 manifest)
             caseSet.Add(CargoManifest.Resolve(startManifest, "", out _));
 
-        // action branch0(아이템)은 고정이라 케이스 중 최대 아이템 수로. 적은 케이스의 남는 인덱스는 no-op 처리+마스킹.
-        numItems = 1;
-        foreach (var m in caseSet) numItems = Mathf.Max(numItems, m.Count);
+        // action branch0(아이템): 케이스 중 최대 아이템 수. 적은 케이스의 남는 인덱스는 no-op 처리+마스킹.
+        // 커리큘럼 전이 시엔 maxItemsOverride로 고정(단계마다 action space 동일해야 --initialize-from 됨).
+        int autoMax = 1;
+        foreach (var m in caseSet) autoMax = Mathf.Max(autoMax, m.Count);
+        if (maxItemsOverride > 0)
+        {
+            numItems = maxItemsOverride;
+            if (maxItemsOverride < autoMax)
+                Debug.LogWarning($"[Refine] maxItemsOverride({maxItemsOverride}) < 케이스 최대 아이템({autoMax}) → 초과 아이템 선택 불가. override를 {autoMax} 이상으로 설정하세요.");
+        }
+        else numItems = autoMax;
 
         // 경계 마스킹용: 모든 케이스 중 가장 작은 화물의 최소 반치수. 이보다 좁게 남은 가장자리 셀은
         // 어떤 화물 중심을 놓아도 트레이를 벗어나므로 미리 막는다.
