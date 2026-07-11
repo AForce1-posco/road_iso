@@ -155,10 +155,11 @@ public class RefinementAgent : Agent
 
         var bp = GetComponent<BehaviorParameters>();
         bp.BrainParameters.VectorObservationSize = ObsSize;
-        bp.BrainParameters.ActionSpec = ActionSpec.MakeDiscrete(numItems, NumCells, 2); // 아이템·셀·회전
+        // 아이템·셀·회전 · 모드(0=이동/1=스왑) · 스왑상대 아이템
+        bp.BrainParameters.ActionSpec = ActionSpec.MakeDiscrete(numItems, NumCells, 2, 2, numItems);
         if (MaxStep == 0) MaxStep = stepsPerEpisode + 2;
 
-        Debug.Log($"[RefinementAgent] obs={ObsSize}, action=({numItems},{NumCells},2), 케이스={caseSet.Count}개, 최대화물={numItems}개, mode={startPackMode}");
+        Debug.Log($"[RefinementAgent] obs={ObsSize}, action=({numItems},{NumCells},2,2,{numItems})[이동+스왑], 케이스={caseSet.Count}개, 최대화물={numItems}개, mode={startPackMode}");
     }
 
     public override void OnEpisodeBegin()
@@ -219,7 +220,10 @@ public class RefinementAgent : Agent
         // branch0(아이템): 케이스마다 아이템 수가 달라 numItems(=최대)보다 적을 수 있음.
         //   실재하지 않는 인덱스(placed.Count 이상)를 막아 무의미한 no-op 스텝을 줄인다.
         for (int i = placed.Count; i < numItems; i++)
-            mask.SetActionEnabled(0, i, false);
+        {
+            mask.SetActionEnabled(0, i, false);   // 이동 대상 아이템
+            mask.SetActionEnabled(4, i, false);   // 스왑 상대 아이템
+        }
 
         // branch2(회전)은 마스킹 불가(어떤 아이템을 고를지에 의존 → 조합 마스킹 불가, ML-Agents는 브랜치별 독립).
         // branch1(셀)은 아래에서 막는다. 브랜치 독립 마스킹이라 겹침(아이템·회전 조합 의존)은 못 막고,
@@ -243,8 +247,11 @@ public class RefinementAgent : Agent
         int itemIdx = actions.DiscreteActions[0];
         int cellIdx = actions.DiscreteActions[1];
         int rot = actions.DiscreteActions[2];
+        int mode = actions.DiscreteActions[3];    // 0=이동, 1=스왑
+        int item2 = actions.DiscreteActions[4];   // 스왑 상대 아이템
 
-        if (TryRelocate(itemIdx, cellIdx, rot))
+        bool moved = (mode == 1) ? TrySwap(itemIdx, item2) : TryRelocate(itemIdx, cellIdx, rot);
+        if (moved)
         {
             float now = Score();
             AddReward(now - prevFinal);      // ΔScore (개선분). 누적 = 시작 대비 개선 (CGS Final 또는 −surrogate위험)
@@ -296,12 +303,59 @@ public class RefinementAgent : Agent
             halfSize = half
         };
 
-        if (!rules.IsValid(placed, cand))
+        placed.Insert(itemIdx, cand);                              // 후보 삽입 후 전체 검증
+        // 이동 아이템뿐 아니라 "모든 화물"의 유효성(특히 H8 지지율) 재검사 →
+        // 받침이 사라져 공중에 뜨는(부양) 화물까지 잡아냄. 하나라도 무효면 이동 취소.
+        if (!AllItemsValid())
         {
+            placed.RemoveAt(itemIdx);
             placed.Insert(itemIdx, old);                           // 무효 → 원위치 복구
             return false;
         }
-        placed.Insert(itemIdx, cand);                              // 유효 → 이동본으로 교체(인덱스 유지)
+        return true;
+    }
+
+    /// <summary>현재 placed 전체가 유효한지 — 각 화물을 (나머지)에 대해 IsValid 검사.
+    /// 이동으로 받침을 잃은 화물(부양)이나 새로 생긴 겹침을 모두 잡는다. (O(n²), n=화물수라 문제없음)</summary>
+    private bool AllItemsValid()
+    {
+        var others = new List<RuleChecker.PlacedItem>(placed.Count);
+        for (int k = 0; k < placed.Count; k++)
+        {
+            others.Clear();
+            for (int j = 0; j < placed.Count; j++) if (j != k) others.Add(placed[j]);
+            if (!rules.IsValid(others, placed[k])) return false;
+        }
+        return true;
+    }
+
+    /// <summary>두 화물 i·j의 XZ 위치를 맞바꾸고 각자 재안착. 전체 유효하면 이동, 아니면 원복+false.
+    /// 꽉 찬 트레이에서도 빈 칸 없이 재배치 가능. 인덱스 유지.</summary>
+    private bool TrySwap(int i, int j)
+    {
+        if (i < 0 || j < 0 || i >= placed.Count || j >= placed.Count || i == j) return false;
+
+        var A = placed[i]; var B = placed[j];
+        float ax = A.center.x, az = A.center.z, bx = B.center.x, bz = B.center.z;
+
+        int hi = Mathf.Max(i, j), lo = Mathf.Min(i, j);
+        placed.RemoveAt(hi); placed.RemoveAt(lo);                    // 둘 다 빼기 (placed = 나머지)
+
+        float aRest = RestBottom(bx, bz, A.halfSize);               // A를 B 자리에 안착
+        var A2 = new RuleChecker.PlacedItem { type = A.type, halfSize = A.halfSize, center = new Vector3(bx, aRest + A.halfSize.y, bz) };
+        float bRest = RestBottom(ax, az, B.halfSize);               // B를 A 자리에 안착
+        var B2 = new RuleChecker.PlacedItem { type = B.type, halfSize = B.halfSize, center = new Vector3(ax, bRest + B.halfSize.y, az) };
+
+        placed.Insert(lo, lo == i ? A2 : B2);                        // 원 인덱스에 재삽입
+        placed.Insert(hi, hi == i ? A2 : B2);
+
+        if (!AllItemsValid())
+        {
+            placed.RemoveAt(hi); placed.RemoveAt(lo);
+            placed.Insert(lo, lo == i ? A : B);                      // 무효 → 원복
+            placed.Insert(hi, hi == i ? A : B);
+            return false;
+        }
         return true;
     }
 
