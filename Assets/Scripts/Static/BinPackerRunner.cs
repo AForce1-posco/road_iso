@@ -44,10 +44,48 @@ public class BinPackerRunner : MonoBehaviour
     [Tooltip("재현용 시드. Dense/Stable 비교 시 같은 시드 → 같은 매니페스트 세트.")]
     public int randomSeed = 42;
 
+    [Header("GRASP 멀티시드 — 같은 매니페스트를 시드별로 다양 배치 → 예측기로 best 선택")]
+    [Tooltip("생성할 시드(=배치 후보) 개수")]
+    public int graspSeeds = 12;
+    [Tooltip("RCL 폭. 0=최고점만(≈결정론), 클수록 다양성↑ (0.2~0.4 권장)")]
+    [Range(0f, 1f)] public float graspAlpha = 0.3f;
+    [Tooltip("순서 랜덤화 폭. 정렬 상위 K개 중 랜덤으로 다음 화물 선택")]
+    public int graspOrderK = 2;
+
     [Header("실행")]
     public bool runOnStart = false;
 
     void Start() { if (runOnStart) Run(); }
+
+    [ContextMenu("Run GRASP Batch (멀티시드 → 후보 N개 + det baseline export)")]
+    public void RunGraspBatch()
+    {
+        var manifestList = CargoManifest.Resolve(manifest, manifestCsv, out string src);
+        if (manifestList.Count == 0) { Debug.LogError($"[GRASP] manifest 비었음 (source={src})"); return; }
+        string dir = Path.Combine(Application.dataPath, outputSubdir);
+        Directory.CreateDirectory(dir);
+
+        // 결정론 baseline (기존 Pack) — GRASP best와 비교 기준
+        var det = new BinPacker(ruleConfig, rewardConfig, cols, rows) { mode = packMode };
+        WriteJson(Path.Combine(dir, $"grasp_{outputName}_det.json"), det.Pack(manifestList));
+
+        int total = 0, fullCount = 0;
+        for (int seed = 0; seed < graspSeeds; seed++)
+        {
+            var packer = new BinPacker(ruleConfig, rewardConfig, cols, rows) { mode = packMode };
+            var unplaced = new List<CargoType>();
+            var placed = packer.PackGrasp(manifestList, new System.Random(seed), graspAlpha, graspOrderK, unplaced);
+            WriteJson(Path.Combine(dir, $"grasp_{outputName}_{seed:D2}.json"), placed);
+            total += placed.Count;
+            if (unplaced.Count == 0) fullCount++;
+        }
+        Debug.Log($"[GRASP:{packMode}] {graspSeeds}시드 (alpha={graspAlpha}, orderK={graspOrderK}, src={src}) " +
+                  $"→ grasp_{outputName}_*.json (+det). 완주 {fullCount}/{graspSeeds}, 배치합계 {total} → {dir}\n" +
+                  $"다음: python Assets/Data/Results/grasp_pick.py grasp_{outputName}");
+#if UNITY_EDITOR
+        UnityEditor.AssetDatabase.Refresh();
+#endif
+    }
 
     [ContextMenu("Run Random Batch (자동 랜덤 매니페스트 N개 팩)")]
     public void RunRandomBatch()

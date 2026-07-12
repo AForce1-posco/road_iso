@@ -1,0 +1,50 @@
+# ============================================================================
+# 증류(distillation) 학습 — SA 최적배치를 BC로 모방 + surrogate RL 미세조정
+# 목표: RL 정책이 SA급 배치를 재현(즉시추론). 교사 = SA(_saopt) replay 데모.
+#
+# 절차:
+#  [1] SA 데모 녹화 (Heuristic Only): PlacementAgent replayMode✓·sequenceMode✗·
+#      useFixedManifest✗·binPackerHeuristic✗ + Demonstration Recorder(Record✓, 이름 SAteacher)
+#      → Play, 수천 스텝 녹화 후 정지 → Assets/Demonstrations/SAteacher.demo
+#  [2] 학습 (Default): replayMode✗·sequenceMode✗·useFixedManifest✗(랜덤)·Recorder Record✗·
+#      useSurrogateReward✓(lgbm500,scale10)·guaranteedCompletion✓·Behavior Type=Default
+#      conda activate mlagents-x86
+#      caffeinate -dimsu mlagents-learn Docs/rl_config_distill.yaml --run-id=distill_sa --force
+#      → Listening 뜨면 Play
+#  [3] 검증: 학습 정책 배치(saveLayoutOnComplete로 export) → 주행 → SA·빈패커 실측 비교
+# ============================================================================
+behaviors:
+  PlacementAgent:                   # Behavior Name 일치. 전체 배치 액션 (종류,셀341,회전2)
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 256
+      buffer_size: 4096             # batch의 배수
+      learning_rate: 3.0e-4
+      learning_rate_schedule: linear
+      beta: 1.0e-2                  # 탐색 유지(붕괴 방지)
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+
+    network_settings:
+      hidden_units: 512             # 관측 큼(높이맵341+…) + 다양 매니페스트 → 용량 여유
+      num_layers: 2
+      normalize: true
+      vis_encode_type: simple
+
+    reward_signals:
+      extrinsic:                    # = 에이전트 terminal 보상(−surrogate p99×scale, 씬에서 설정)
+        gamma: 0.99
+        strength: 1.0
+
+    behavioral_cloning:             # ⭐ 교사 = SA 데모. RL의 약한 신호를 SA 모범답안이 견인
+      demo_path: Assets/Demonstrations/SAteacher.demo
+      strength: 0.5                 # BC 견인 세기 (0.3~1.0). 약하면↑
+      steps: 0                      # 0 = 학습 내내 BC 유지(증류라 계속 붙잡음)
+
+    max_steps: 1000000              # 증류는 넉넉히. 곡선 보며 조절
+    time_horizon: 64
+    summary_freq: 5000
+    keep_checkpoints: 5
+    checkpoint_interval: 100000
+    threaded: true

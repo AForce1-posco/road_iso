@@ -90,6 +90,15 @@ public class PlacementAgent : Agent
     [Tooltip("저장 파일명 (확장자 제외). Assets/Data/Results/ 아래.")]
     public string layoutOutName = "rl_layout";
 
+    [Header("Learn-to-pack (순서 학습 — 위치는 빈패커가 결정)")]
+    [Tooltip("켜면 행동 = '다음 놓을 화물'만(numTypes). 위치·회전은 빈패커 PlaceBest(Dense)가 최적 결정 → 배치 항상 유효. " +
+             "끄면 기존 (종류,셀,회전) 방식. surrogate 보상과 함께 쓰면 'RL은 순서만 학습' 실험.")]
+    public bool sequenceMode = false;
+    [Tooltip("learn-to-pack 디코더 모드. 켜면 Stable(낮고 중앙=좌우균형), 끄면 Dense(구석채움). " +
+             "Stable이 좌우편향을 줄여 p99 캡을 깰 수 있음(대신 덜 촘촘).")]
+    public bool sequenceDecoderStable = true;
+    private BinPacker seqPacker;   // learn-to-pack 배치 디코더
+
     [Header("디버그")]
     [Tooltip("켜면 배치/에피소드 결과를 콘솔에 찍음 (학습 시엔 끄기)")]
     public bool verboseLog = true;
@@ -154,11 +163,15 @@ public class PlacementAgent : Agent
         // 관측 크기 · 행동 스펙 코드로 설정 (인스펙터 수동세팅 불필요)
         var bp = GetComponent<BehaviorParameters>();
         bp.BrainParameters.VectorObservationSize = ObsSize;
-        bp.BrainParameters.ActionSpec = ActionSpec.MakeDiscrete(NumTypes, NumCells, 2);
+        bp.BrainParameters.ActionSpec = sequenceMode
+            ? ActionSpec.MakeDiscrete(NumTypes)                 // learn-to-pack: 순서만
+            : ActionSpec.MakeDiscrete(NumTypes, NumCells, 2);   // 기존: 종류·셀·회전
         int epLen = useFixedManifest ? fixedTotal : manifestMax;
         if (MaxStep == 0) MaxStep = (epLen + maxInvalidPerEpisode) * 3;
 
-        Debug.Log($"[PlacementAgent] obs={ObsSize}, action=({NumTypes},{NumCells},2), pool={NumTypes}종");
+        Debug.Log(sequenceMode
+            ? $"[PlacementAgent:seq] obs={ObsSize}, action=({NumTypes})[순서만, 위치=빈패커], pool={NumTypes}종"
+            : $"[PlacementAgent] obs={ObsSize}, action=({NumTypes},{NumCells},2), pool={NumTypes}종");
     }
 
     /// <summary>고정 manifest → pool 인덱스별 개수(fixedRemaining) + 총합(fixedTotal) 미리 계산.</summary>
@@ -177,13 +190,51 @@ public class PlacementAgent : Agent
         Debug.Log($"[PlacementAgent] 고정 manifest 사용: 총 {fixedTotal}개 ({pool.Count}종)");
     }
 
+    /// <summary>증류: replayDir의 SA 최적배치(*_saopt.json) 하나 로드 → remaining[] 세팅 + replayTargets(아래→위) 구성.</summary>
+    private void SetupReplayEpisode()
+    {
+        if (replayFiles == null)
+        {
+            replayFiles = new List<string>();
+            string dir = Path.Combine(Application.dataPath, replayDir);
+            if (Directory.Exists(dir))
+                foreach (var f in Directory.GetFiles(dir, "*_saopt.json")) replayFiles.Add(f);
+            Debug.Log($"[Replay] SA 교사 배치 {replayFiles.Count}개 로드 ({dir})");
+        }
+        var nameIdx = new Dictionary<string, int>();
+        for (int i = 0; i < pool.Count; i++) nameIdx[pool[i].name] = i;
+        System.Array.Clear(remaining, 0, remaining.Length);
+        var targs = new List<(int ti, int cell, int rot, float y)>();
+        if (replayFiles.Count > 0)
+        {
+            var file = JsonUtility.FromJson<CargoLayoutFile>(
+                File.ReadAllText(replayFiles[Random.Range(0, replayFiles.Count)]));
+            if (file != null && file.cargo != null)
+                foreach (var e in file.cargo)
+                {
+                    if (e == null || !nameIdx.TryGetValue(e.type, out int ti)) continue;
+                    remaining[ti]++;
+                    int c = Mathf.Clamp(Mathf.RoundToInt(e.localPos.x * cols / ruleConfig.trayLateralM - 0.5f), 0, cols - 1);
+                    int r = Mathf.Clamp(Mathf.RoundToInt(e.localPos.z * rows / ruleConfig.trayLengthM - 0.5f), 0, rows - 1);
+                    int rot = (Mathf.Abs(e.localEuler.y - 90f) < 1f || Mathf.Abs(e.localEuler.y - 270f) < 1f) ? 1 : 0;
+                    targs.Add((ti, r * cols + c, rot, e.localPos.y));
+                }
+        }
+        targs.Sort((a, b) => a.y.CompareTo(b.y));   // 아래→위로 재현해야 지지 성립
+        replayTargets = new List<int[]>();
+        foreach (var t in targs) replayTargets.Add(new int[] { t.ti, t.cell, t.rot });
+        placedTarget = replayTargets.Count;
+        if (verboseLog) Debug.Log($"[Replay] 에피소드 목표 {placedTarget}개");
+    }
+
     public override void OnEpisodeBegin()
     {
         placed.Clear();
         invalidCount = 0;
         remaining = new int[NumTypes];
 
-        if (useFixedManifest && fixedRemaining != null)
+        if (replayMode) { SetupReplayEpisode(); }
+        else if (useFixedManifest && fixedRemaining != null)
         {
             // 단일 케이스: 매 에피소드 같은 고정 manifest (랜덤 없음)
             placedTarget = fixedTotal;
@@ -316,6 +367,8 @@ public class PlacementAgent : Agent
         for (int i = 0; i < NumTypes; i++)
             if (remaining[i] <= 0) mask.SetActionEnabled(0, i, false);
 
+        if (sequenceMode) return;   // 순서만: 셀/회전 브랜치 없음
+
         // branch1(셀): 높이한도까지 꽉 찬 셀 마스킹 (그 위엔 아무것도 못 놓음)
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < cols; c++)
@@ -329,6 +382,8 @@ public class PlacementAgent : Agent
 
     public override void OnActionReceived(ActionBuffers actions)
     {
+        if (sequenceMode) { OnActionSequence(actions); return; }
+
         int typeIdx = actions.DiscreteActions[0];
         int cellIdx = actions.DiscreteActions[1];
         int rot = actions.DiscreteActions[2]; // 0=그대로, 1=yaw90
@@ -361,6 +416,45 @@ public class PlacementAgent : Agent
             AddReward(tr);
             if (saveLayoutOnComplete) SaveLayout();   // 추론/검증용: 완성배치를 주행 입력 JSON으로
             if (verboseLog) Debug.Log($"[에피소드 {episodeIdx} 완료] 전부 배치! 최종보상 {tr:F4}{(useSurrogateReward ? " (surrogate=-risk)" : "")}");
+            EndEpisode();
+        }
+    }
+
+    /// <summary>Learn-to-pack: RL은 "다음 놓을 화물"만 선택 → 빈패커(Dense) PlaceBest가 최적 위치·회전 결정 → TryPlace.</summary>
+    private void OnActionSequence(ActionBuffers actions)
+    {
+        int typeIdx = actions.DiscreteActions[0];
+        if (seqPacker == null) seqPacker = new BinPacker(ruleConfig, rewardConfig, cols, rows)
+            { mode = sequenceDecoderStable ? BinPacker.PackMode.Stable : BinPacker.PackMode.Dense };
+
+        bool placedOk = false;
+        if (typeIdx >= 0 && typeIdx < NumTypes && remaining[typeIdx] > 0
+            && seqPacker.PlaceBest(placed, pool[typeIdx], out int cell, out int rot))
+            placedOk = TryPlace(typeIdx, cell, rot);
+
+        if (!placedOk)
+        {
+            if (guaranteedCompletion)
+            {
+                AddReward(-invalidStepPenalty);
+                if (!PlaceByTeacher())   // 선택한 화물을 못 놓음 → 교사가 놓을 수 있는 것 대신 배치(완주 보장)
+                {
+                    float partial = TerminalReward() - unplacedPenalty * CountRemaining();
+                    AddReward(partial);
+                    if (verboseLog) Debug.Log($"[에피소드 {episodeIdx} seq 완주실패] {placed.Count}/{placedTarget} R={partial:F3}");
+                    EndEpisode();
+                    return;
+                }
+            }
+            else { Fail($"seq 무효 typeIdx={typeIdx}"); return; }
+        }
+
+        if (AllPlaced())
+        {
+            float tr = TerminalReward();
+            AddReward(tr);
+            if (saveLayoutOnComplete) SaveLayout();
+            if (verboseLog) Debug.Log($"[에피소드 {episodeIdx} seq 완료] 최종보상 {tr:F4}");
             EndEpisode();
         }
     }
@@ -461,9 +555,39 @@ public class PlacementAgent : Agent
     public bool binPackerHeuristic = true;
     private BinPacker heuristicPacker;
 
+    [Header("증류: SA 교사 replay (SA 최적배치 재현 → BC 데모)")]
+    [Tooltip("켜면 매 에피소드 replayDir의 *_saopt.json(SA 최적배치) 하나 로드 → 그 배치를 재현하도록 Heuristic 행동. " +
+             "Demonstration Recorder + Heuristic Only로 녹화 = BC 교사가 빈패커가 아니라 SA. " +
+             "⚠️ sequenceMode·useFixedManifest·binPackerHeuristic 다 꺼야 이게 교사가 됨(전체 배치 액션).")]
+    public bool replayMode = false;
+    public string replayDir = "Data/Cases_binpack";
+    private List<string> replayFiles;
+    private List<int[]> replayTargets;   // 정렬된 [typeIdx, cell, rot] (아래→위 순)
+
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var d = actionsOut.DiscreteActions;
+
+        // 증류: SA 배치 재현 — placed 순서대로 다음 목표(아래→위) 출력
+        if (replayMode)
+        {
+            if (replayTargets != null && placed.Count < replayTargets.Count)
+            {
+                var tg = replayTargets[placed.Count];
+                d[0] = tg[0]; d[1] = tg[1]; d[2] = tg[2];
+            }
+            else { d[0] = 0; d[1] = 0; d[2] = 0; }
+            return;
+        }
+
+        // Learn-to-pack: 행동은 "다음 화물"뿐 → 교사(Decide)가 고르는 화물을 시연
+        if (sequenceMode)
+        {
+            if (heuristicPacker == null) heuristicPacker = new BinPacker(ruleConfig, rewardConfig, cols, rows);
+            if (heuristicPacker.Decide(placed, pool, remaining, out int ti, out _, out _)) d[0] = ti;
+            else { d[0] = 0; for (int i = 0; i < NumTypes; i++) if (remaining[i] > 0) { d[0] = i; break; } }
+            return;
+        }
 
         // BC 교사: 빈패커(Stable)의 "다음 한 수" — 유효·최고점 행동을 시연
         if (binPackerHeuristic)

@@ -16,11 +16,11 @@ behaviors:
     trainer_type: ppo
 
     hyperparameters:
-      batch_size: 128
+      batch_size: 512               # 큰 배치로 그래디언트 안정화 (붕괴와 무관)
       buffer_size: 2048
-      learning_rate: 3.0e-4
+      learning_rate: 3.0e-4         # 표준값 복귀 (3e-2는 s0에서 즉시 붕괴 Std→0 유발 → 되돌림)
       learning_rate_schedule: linear
-      beta: 1.0e-2                  # 엔트로피 — 재배치 탐색
+      beta: 1.0e-2                  # 엔트로피 복귀 (1e-4는 탐색 죽어 붕괴 → 되돌림)
       epsilon: 0.2
       lambd: 0.95
       num_epoch: 3
@@ -36,7 +36,8 @@ behaviors:
         gamma: 0.99
         strength: 1.0
 
-    max_steps: 300000
+    max_steps: 400000             # 단계당 상한 (--initialize-from은 step 리셋 → 단계마다 0→이 값).
+                                  # s3 수렴확인용 +100k 연장. 대부분 그 전에 수렴 → Ctrl-C.
     time_horizon: 64
     summary_freq: 5000
     keep_checkpoints: 5

@@ -114,6 +114,64 @@ public class BinPacker
     }
 
     /// <summary>
+    /// GRASP(Greedy Randomized Adaptive Search) 팩 — 시드별로 다양한 배치를 생성.
+    /// Pack의 두 결정론 지점을 랜덤화: (1) 순서 = 정렬 상위 orderK개 중 랜덤, (2) 배치 = RCL(상위 후보군) 중 랜덤.
+    /// rng=null이면 Pack과 동일(결정론). alpha=0이면 최고점만(=거의 Pack), 클수록 다양성↑.
+    /// 용도: Pack(seed) N회 → 예측기로 채점 → best 채택 (국소최적 탈출 · refinement 시작점 다양화).
+    /// </summary>
+    public List<Placement> PackGrasp(List<CargoType> manifest, System.Random rng,
+                                     float alpha = 0.3f, int orderK = 2, List<CargoType> unplaced = null)
+    {
+        if (rng == null) return Pack(manifest, unplaced);
+
+        // 남은 화물 (Pack과 동일 정렬 키: Dense=부피, Stable=질량, 내림차순)
+        var remaining = new List<CargoType>();
+        foreach (var t in manifest) if (t != null) remaining.Add(t);
+        if (mode == PackMode.Dense) remaining.Sort((a, b) => Volume(b).CompareTo(Volume(a)));
+        else                        remaining.Sort((a, b) => b.massKg.CompareTo(a.massKg));
+
+        var placed = new List<Placement>();
+        var items = new List<RuleChecker.PlacedItem>();
+
+        while (remaining.Count > 0)
+        {
+            // (1) 순서 랜덤화: 정렬 상위 orderK개 중 하나 랜덤 선택 (나머지는 정렬 유지)
+            int pickN = Mathf.Min(Mathf.Max(1, orderK), remaining.Count);
+            int oi = rng.Next(pickN);
+            CargoType type = remaining[oi];
+            remaining.RemoveAt(oi);
+
+            // 유효 후보 전부 수집 (셀×회전)
+            int rotN = type.shape == CargoShape.Pipe ? 1 : 2;
+            var cands = new List<Placement>();
+            var citems = new List<RuleChecker.PlacedItem>();
+            var scores = new List<float>();
+            float best = float.NegativeInfinity, worst = float.PositiveInfinity;
+            for (int cell = 0; cell < NumCells; cell++)
+                for (int rot = 0; rot < rotN; rot++)
+                {
+                    Placement cand = MakeCandidate(items, type, cell, rot);
+                    var item = ToItem(cand);
+                    if (!rules.IsValid(items, item)) continue;
+                    float s = Score(items, item, cand);
+                    cands.Add(cand); citems.Add(item); scores.Add(s);
+                    if (s > best) best = s;
+                    if (s < worst) worst = s;
+                }
+
+            if (cands.Count == 0) { unplaced?.Add(type); continue; }
+
+            // (2) RCL: 점수가 best - alpha*(best-worst) 이상인 후보군 중 랜덤 선택
+            float thr = best - alpha * (best - worst);
+            var rcl = new List<int>();
+            for (int i = 0; i < cands.Count; i++) if (scores[i] >= thr) rcl.Add(i);
+            int pick = rcl[rng.Next(rcl.Count)];
+            placed.Add(cands[pick]); items.Add(citems[pick]);
+        }
+        return placed;
+    }
+
+    /// <summary>
     /// 현재 상태에서 "다음 한 수" 최선 행동 (Phase2 BC 교사용 — PlacementAgent.Heuristic이 호출).
     /// Pack과 동일 정책: 남은 종류 중 무거운 것부터, 유효 후보 중 최고 점수 (셀, 회전).
     /// 유효 후보가 하나도 없으면 false (호출측에서 폴백).
@@ -150,6 +208,31 @@ public class BinPacker
             if (found) { typeIdx = ti; cellIdx = bestCell; rot = bestRot; return true; }
         }
         return false;   // 어떤 남은 화물도 놓을 곳 없음 (과적/공간)
+    }
+
+    /// <summary>
+    /// learn-to-pack 디코더: 주어진 type을 현재 placed 위에 놓을 최선(유효·최고점) 셀·회전을 반환.
+    /// RL이 "순서(어떤 화물)"만 정하고, 이 함수가 "위치"를 최적 결정 → 나오는 배치는 항상 유효.
+    /// 못 놓으면 false.
+    /// </summary>
+    public bool PlaceBest(IReadOnlyList<RuleChecker.PlacedItem> placed, CargoType type, out int cell, out int rot)
+    {
+        cell = -1; rot = 0;
+        if (type == null) return false;
+        var items = new List<RuleChecker.PlacedItem>(placed);
+        bool found = false;
+        float bestScore = float.NegativeInfinity;
+        int rotN = type.shape == CargoShape.Pipe ? 1 : 2;
+        for (int cc = 0; cc < NumCells; cc++)
+            for (int r = 0; r < rotN; r++)
+            {
+                Placement cand = MakeCandidate(items, type, cc, r);
+                var item = ToItem(cand);
+                if (!rules.IsValid(items, item)) continue;
+                float s = Score(items, item, cand);
+                if (s > bestScore) { bestScore = s; cell = cc; rot = r; found = true; }
+            }
+        return found;
     }
 
     /// <summary>

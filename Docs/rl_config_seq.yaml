@@ -1,0 +1,44 @@
+# ============================================================================
+# Learn-to-pack (순서 학습) RL 설정 — PlacementAgent, sequenceMode=ON
+# ----------------------------------------------------------------------------
+# RL은 "다음 놓을 화물"만 선택(action=numTypes), 위치·회전은 빈패커(Dense) PlaceBest가 결정.
+# → 배치 항상 유효, 행동공간 최소, terminal 보상 = −surrogate(최종배치)×scale.
+#
+# 실행: conda activate mlagents-x86
+#   caffeinate -dimsu mlagents-learn Docs/rl_config_seq.yaml --run-id=seq_lgbm --force
+#   → "Listening..." 뜨면 Unity Play (RLTraining 씬, Behavior Type=Default)
+#
+# ⚠️ PlacementAgent 인스펙터:
+#   sequenceMode ✓ · useSurrogateReward ✓ · surrogateResourceName=layout_risk_lgbm500(또는 _p95_9feat)
+#   surrogateRewardScale=10 · guaranteedCompletion ✓ · useFixedManifest ✓(boxpack001, 첫 실험)
+#   saveLayoutOnComplete ✗ · verboseLog ✗ · Behavior Type=Default
+#   → obs/action은 코드가 자동 산정: action=(numTypes) 단일 브랜치.
+# ============================================================================
+behaviors:
+  PlacementAgent:                   # Behavior Name 과 일치
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 128
+      buffer_size: 2048
+      learning_rate: 3.0e-4
+      learning_rate_schedule: linear
+      beta: 1.0e-2                  # 작은 행동공간 → 탐색 유지용 엔트로피
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+    network_settings:
+      hidden_units: 256             # 행동공간 작아 256 충분
+      num_layers: 2
+      normalize: true
+      vis_encode_type: simple
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+      # BC·GAIL 불필요 — 순서 학습은 행동공간이 작아 순수 PPO로 충분
+    max_steps: 400000               # Dense 디코더가 200k에도 미수렴 → 연장(--resume)해 진짜 평평지점 확인
+    time_horizon: 64
+    summary_freq: 5000
+    keep_checkpoints: 5
+    checkpoint_interval: 50000
+    threaded: true
