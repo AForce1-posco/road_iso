@@ -5,10 +5,10 @@ public class RiskDisplay : MonoBehaviour
 {
     [Header("참조 (비우면 자동 검색)")]
     public VehicleController vehicle;
-    public RiskModel riskModel;
     public EarlyWarningLSTM earlyWarning;
     public CargoBedLoader cargoLoader;
     public PurePursuitController pursuit;
+    public CargoFeatureCalculator staticFeatureCalculator;
 
     [Header("최종 지표 노이즈 필터")]
     public int sustainFrames = 3;
@@ -31,17 +31,16 @@ public class RiskDisplay : MonoBehaviour
     private float lastSampleTime = 0f;
     private float runElapsed = 0f;
 
-    private float currentRisk = 0f;          // XGBoost 예측값 (비교용, 보조)
     private float actualLTR = 0f;
-    private float currentActualLTR = 0f;     // 그 순간의 실측 |LTR| (메인)
+    private float currentActualLTR = 0f;
     private float currentSpeed = 0f;
     private float currentLatAcc = 0f;
-    private float? earlyWarningProb = null;  // LSTM: 1.5초 후 확률 (보조)
+    private float? earlyWarningProb = null;
 
     private float[] ltrWindow;
     private int windowIndex = 0;
     private int windowFilled = 0;
-    private float peakRisk = 0f;             // 이번 주행 최고 위험도 (실측 누적)
+    private float peakRisk = 0f;
     private float currentSustainedLTR = 0f;
 
     private System.Collections.Generic.List<float> fullProbHistory = new System.Collections.Generic.List<float>();
@@ -56,14 +55,16 @@ public class RiskDisplay : MonoBehaviour
     private float cargoMass = 0f;
     private bool cargoInfoCached = false;
 
+    private float? staticPredictedRisk = null;
+
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
         if (vehicle == null) vehicle = GetComponent<VehicleController>();
-        if (riskModel == null) riskModel = GetComponent<RiskModel>();
         if (earlyWarning == null) earlyWarning = GetComponent<EarlyWarningLSTM>();
         if (cargoLoader == null) cargoLoader = FindObjectOfType<CargoBedLoader>();
         if (pursuit == null) pursuit = GetComponent<PurePursuitController>();
+        if (staticFeatureCalculator == null) staticFeatureCalculator = GetComponent<CargoFeatureCalculator>();
 
         ltrWindow = new float[Mathf.Max(1, sustainFrames)];
     }
@@ -100,7 +101,6 @@ public class RiskDisplay : MonoBehaviour
         float latAcc = localAcc.x;
 
         Vector3 euler = transform.eulerAngles;
-        float roll = NormalizeAngle(euler.z);
         float rollRate = Mathf.DeltaAngle(lastEuler.z, euler.z) / dt;
         float yawRate = Mathf.DeltaAngle(lastEuler.y, euler.y) / dt;
 
@@ -128,9 +128,6 @@ public class RiskDisplay : MonoBehaviour
         currentActualLTR = Mathf.Abs(actualLTR);
 
         float[] features = { speedKmh, latAcc, longAcc, rollRate, yawRate, steerAngle, maxSideSlip };
-
-        if (riskModel != null)
-            currentRisk = riskModel.Predict(features);
 
         if (earlyWarning != null)
             earlyWarningProb = earlyWarning.PushAndPredict(features);
@@ -169,6 +166,9 @@ public class RiskDisplay : MonoBehaviour
             foreach (var c in cargoLoader.Loaded)
                 cargoMass += c.type.massKg * cargoLoader.massScale;
             cargoInfoCached = true;
+
+            if (staticFeatureCalculator != null)
+                staticPredictedRisk = staticFeatureCalculator.ComputeAndPredict();
         }
 
         lastVelocity = vel;
@@ -247,13 +247,13 @@ public class RiskDisplay : MonoBehaviour
         GUIStyle smallStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
         GUIStyle bigStyle = new GUIStyle(GUI.skin.label) { fontSize = 30, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
         GUIStyle labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, alignment = TextAnchor.MiddleCenter };
-        GUIStyle riskStyle = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold };
+        GUIStyle compareStyle = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold };
         GUIStyle reportStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold, wordWrap = true };
 
-        GUI.Box(new Rect(x, y, panelWidth, 250), "");
+        GUI.Box(new Rect(x, y, panelWidth, 200), "");
         int cy = y + 6;
         GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 16), "▶ 실시간 위험 모니터", sectionTitle);
-        cy += 22;
+        cy += 24;
 
         // ── 메인: 실시간 위험도 (실측값) ──
         float actualScore100 = currentActualLTR * 100f;
@@ -267,12 +267,7 @@ public class RiskDisplay : MonoBehaviour
         GUI.Label(new Rect(x + 10, cy + 42, panelWidth - 20, 16), "실시간 위험도 (실측)", labelStyle);
         cy += 68;
 
-        // ── 보조 1: XGBoost 예측값 (실측과 비교용) ──
-        float xgbScore100 = currentRisk * 100f;
-        GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 16), $"모델 예측(XGBoost): {xgbScore100:F0}", smallStyle);
-        cy += 18;
-
-        // ── 보조 2: LSTM 1.5초 후 예측 ──
+        // ── LSTM 1.5초 후 예측 (조기경보) ──
         string subText;
         Color subColor = Color.gray;
         if (runElapsed < ignoreStartupSeconds)
@@ -289,29 +284,51 @@ public class RiskDisplay : MonoBehaviour
         GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 16), subText, sub);
         cy += 20;
 
-        // ── Speed / LatAcc (Roll 대신 LatAcc로 변경) ──
         GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 18), $"Speed: {currentSpeed:F1} km/h   LatAcc: {currentLatAcc:F1} m/s²", rowStyle); cy += 18;
         if (cargoInfoCached)
             GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 18), $"Cargo: {cargoCount}개 / {cargoMass:F0}kg", rowStyle);
-        cy += 22;
 
-        // ── 하단: 이번 주행 최고 위험도 (실측, 누적) ──
-        Color peakColor = Color.green;
-        if (peakRisk > 0.3f) peakColor = new Color(0.9f, 0.8f, 0.1f);
-        if (peakRisk > 0.6f) peakColor = Color.red;
-        GUIStyle peakStyle = new GUIStyle(riskStyle) { normal = { textColor = peakColor } };
-        GUI.Label(new Rect(x + 10, cy, panelWidth - 20, 22), $"이번 주행 최고 위험도: {peakRisk * 100f:F0}", peakStyle);
+        // ── 하단 강조 패널: 사전 예측 vs 실측 최고위험도 비교 ──
+        int y2 = y + 200 + 10;
+        int panelHeight2 = 110;
+        GUI.Box(new Rect(x, y2, panelWidth, panelHeight2), "");
+        int cy2 = y2 + 8;
+
+        GUI.Label(new Rect(x + 10, cy2, panelWidth - 20, 16), "■ 사전 예측 vs 실측 결과", sectionTitle);
+        cy2 += 22;
+
+        float staticVal = staticPredictedRisk ?? 0f;
+        bool staticReady = staticPredictedRisk.HasValue;
+
+        Color staticColor = staticVal >= dangerThreshold ? Color.red : (staticVal >= warnThreshold ? new Color(0.9f, 0.8f, 0.1f) : Color.green);
+        Color peakColor = peakRisk >= dangerThreshold ? Color.red : (peakRisk >= warnThreshold ? new Color(0.9f, 0.8f, 0.1f) : Color.green);
+
+        GUIStyle staticLabelStyle = new GUIStyle(compareStyle) { normal = { textColor = staticColor } };
+        GUIStyle peakLabelStyle = new GUIStyle(compareStyle) { normal = { textColor = peakColor } };
+
+        GUI.Label(new Rect(x + 10, cy2, panelWidth - 20, 20),
+            staticReady ? $"사전 예측(LightGBM): {staticVal * 100f:F0}점" : "사전 예측 계산 중...", staticLabelStyle);
+        cy2 += 22;
+        GUI.Label(new Rect(x + 10, cy2, panelWidth - 20, 20), $"실측 최고 위험도: {peakRisk * 100f:F0}점", peakLabelStyle);
+        cy2 += 24;
+
+        if (staticReady)
+        {
+            float diff = Mathf.Abs(staticVal - peakRisk) * 100f;
+            GUIStyle diffStyle = new GUIStyle(smallStyle);
+            GUI.Label(new Rect(x + 10, cy2, panelWidth - 20, 18), $"오차: {diff:F0}점", diffStyle);
+        }
 
         // ── 사후 검증 리포트 (완주/전복 시에만) ──
         if (runEnded && reportGenerated)
         {
-            int y2 = y + 250 + 10;
-            GUI.Box(new Rect(x, y2, panelWidth, 90), "");
-            int cy2 = y2 + 6;
-            GUI.Label(new Rect(x + 10, cy2, panelWidth - 20, 16), "■ 사후 검증 리포트 (주행 종료)", sectionTitle);
-            cy2 += 22;
+            int y3 = y2 + panelHeight2 + 10;
+            GUI.Box(new Rect(x, y3, panelWidth, 90), "");
+            int cy3 = y3 + 6;
+            GUI.Label(new Rect(x + 10, cy3, panelWidth - 20, 16), "■ 조기경보 사후 검증", sectionTitle);
+            cy3 += 22;
             GUIStyle rep = new GUIStyle(reportStyle) { normal = { textColor = reportColor } };
-            GUI.Label(new Rect(x + 10, cy2, panelWidth - 20, 60), reportText, rep);
+            GUI.Label(new Rect(x + 10, cy3, panelWidth - 20, 60), reportText, rep);
         }
     }
 }
