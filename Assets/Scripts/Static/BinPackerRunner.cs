@@ -32,10 +32,65 @@ public class BinPackerRunner : MonoBehaviour
     public string outputSubdir = "Data/Cases_binpack";
     public string outputName = "boxpack001";
 
+    [Header("랜덤 배치 (자동 매니페스트)")]
+    [Tooltip("우클릭 'Run Random Batch' 실행 시, 랜덤 매니페스트를 randomCount개 자동 생성해 각각 packMode로 팩→JSON(rand_<mode>_NNN.json). " +
+             "같은 randomSeed로 Dense·Stable을 각각 돌리면 동일 매니페스트라 공정 비교됨.")]
+    public int randomCount = 20;
+    [Tooltip("매니페스트당 화물 개수 랜덤 범위")]
+    public int minItems = 8;
+    public int maxItems = 20;
+    [Tooltip("박스류(B-*, SYN-*)만 사용")]
+    public bool boxOnly = true;
+    [Tooltip("재현용 시드. Dense/Stable 비교 시 같은 시드 → 같은 매니페스트 세트.")]
+    public int randomSeed = 42;
+
     [Header("실행")]
     public bool runOnStart = false;
 
     void Start() { if (runOnStart) Run(); }
+
+    [ContextMenu("Run Random Batch (자동 랜덤 매니페스트 N개 팩)")]
+    public void RunRandomBatch()
+    {
+        // 박스 카탈로그 (boxOnly면 B-*, SYN-*만)
+        var boxes = new List<CargoType>();
+        foreach (var t in CargoCatalog.CreateDefault())
+            if (t != null && (!boxOnly || t.id.StartsWith("B-") || t.id.StartsWith("SYN-")))
+                boxes.Add(t);
+        if (boxes.Count == 0) { Debug.LogError("[BinPacker] 박스 카탈로그 비었음"); return; }
+
+        var rng = new System.Random(randomSeed);
+        var packer = new BinPacker(ruleConfig, rewardConfig, cols, rows) { mode = packMode };
+        string dir = Path.Combine(Application.dataPath, outputSubdir);
+        Directory.CreateDirectory(dir);
+
+        int totalPlaced = 0, totalUnplaced = 0;
+        for (int i = 1; i <= randomCount; i++)
+        {
+            int total = rng.Next(minItems, maxItems + 1);
+            var manifestList = new List<CargoType>();
+            var remaining = new Dictionary<string, int>();
+            foreach (var t in boxes) remaining[t.id] = t.stockCount;
+            for (int k = 0; k < total; k++)
+            {
+                var avail = boxes.FindAll(t => remaining[t.id] > 0);
+                if (avail.Count == 0) break;
+                var pick = avail[rng.Next(avail.Count)];
+                manifestList.Add(pick);
+                remaining[pick.id]--;
+            }
+
+            var unplaced = new List<CargoType>();
+            var placed = packer.Pack(manifestList, unplaced);
+            WriteJson(Path.Combine(dir, $"rand_{packMode}_{i:D3}.json"), placed);
+            totalPlaced += placed.Count; totalUnplaced += unplaced.Count;
+        }
+        Debug.Log($"[BinPacker:{packMode}] 랜덤 배치 {randomCount}개 (seed={randomSeed}, {minItems}~{maxItems}개, boxOnly={boxOnly}) " +
+                  $"→ 총 배치 {totalPlaced}, 미적재 {totalUnplaced} → {dir}/rand_{packMode}_*.json");
+#if UNITY_EDITOR
+        UnityEditor.AssetDatabase.Refresh();
+#endif
+    }
 
     [ContextMenu("Run BinPacker (Pack manifest)")]
     public void Run()
